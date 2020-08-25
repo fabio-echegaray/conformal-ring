@@ -183,7 +183,7 @@ class RingImageQLabel(QLabel, Measure):
             return
 
         if len(nucleus) == 1:
-            self.log.debug(f"Nucleus {nucleus['id'].iloc[0]} selected by clicking.")
+            self.log.debug(f"Nucleus {int(nucleus['id'].iloc[0])} selected by clicking.")
             self.lines(nucleus['id'].iloc[0])
             nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
             self._selNuc = nucbnd

@@ -1,5 +1,6 @@
 import logging
 
+import pandas as pd
 from PyQt5 import QtWidgets
 
 from gui.ring import RingWindow

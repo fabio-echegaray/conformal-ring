@@ -24,7 +24,7 @@ class RingWindow(QMainWindow):
     image: RingImageQLabel
     statusbar: QStatusBar
 
-    def __init__(self):
+    def __init__(self, dna_ch=None, sig_ch=None):
         super(RingWindow, self).__init__()
         path = os.path.join(sys.path[0], __package__)
 
@@ -48,8 +48,6 @@ class RingWindow(QMainWindow):
         self.image.lineUpdated.connect(self.onImgUpdate)
         self.image.linePicked.connect(self.onLinePickedFromImage)
         self.image.nucleusPicked.connect(self.onNucleusPickedFromImage)
-        self.image.dnaChannel = self.ctrl.dnaSpin.value()
-        self.image.rngChannel = self.ctrl.actSpin.value()
 
         self.grph = GraphWidget()
         self.grphtimer = QTimer()
@@ -61,8 +59,10 @@ class RingWindow(QMainWindow):
         # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
         self.grphtimer.timeout.connect(self._graph)
 
-        self.image.dnaChannel = self.ctrl.dnaSpin.value()
-        self.image.rngChannel = self.ctrl.actSpin.value()
+        if dna_ch is not None:
+            self.ctrl.dnaSpin.setValue(int(dna_ch))
+        if sig_ch is not None:
+            self.ctrl.actSpin.setValue(int(sig_ch))
 
         self.measure_n = 0
         self.selectedLine = None
@@ -117,6 +117,7 @@ class RingWindow(QMainWindow):
 
     def _saveCurrentFileMeasurements(self):
         if not self.df.empty:
+            self.log.info("Saving measurements.")
             fname = os.path.basename(self.image.file)
             df = self.df[self.df["file"] == fname]
             df.loc[:, "condition"] = self.ctrl.experimentLineEdit.text()
@@ -223,21 +224,14 @@ class RingWindow(QMainWindow):
         self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
 
         # test rectification code
-        dl = 4
-        ndl = 10
-        nth = 100
-        ppdl = 1
-        ppth = 1
-
         tsplaprx = TestSplineApproximation(self.image.currNucleus, self.image)
         tsplaprx.test_fit()
         tsplaprx.plot_grid()
 
-        trct = TestPiecewiseLinearRectification(tsplaprx,
-                                                dl=dl, n_dl=ndl, n_theta=nth, pix_per_dl=ppdl, pix_per_theta=ppth)
+        trct = TestPiecewiseLinearRectification(tsplaprx, dl=4, n_dl=10, n_theta=100, pix_per_dl=1, pix_per_theta=1)
         trct.plot_rectification()
 
-        tfnrect = TestFunctionRectification(tsplaprx, dl=dl, n_dl=ndl, n_theta=nth, pix_per_dl=ppdl, pix_per_theta=ppth)
+        tfnrect = TestFunctionRectification(tsplaprx, pix_per_dl=1, pix_per_arclen=1)
         tfnrect.plot_rectification()
 
         minx, miny, maxx, maxy = self.image.currNucleus.bounds
@@ -264,6 +258,10 @@ class RingWindow(QMainWindow):
     @QtCore.pyqtSlot()
     def onDnaValChange(self):
         self.log.debug('onDnaValChange')
+        if not self.image.nChannels > 0:
+            self.log.warning('Not a valid number of channels (image not loaded?).')
+            return
+
         val = self.ctrl.dnaSpin.value() % self.image.nChannels
         self.ctrl.dnaSpin.setValue(val)
         self.image.dnaChannel = val
@@ -274,6 +272,10 @@ class RingWindow(QMainWindow):
     @QtCore.pyqtSlot()
     def onActValChange(self):
         self.log.debug('onActValChange')
+        if not self.image.nChannels > 0:
+            self.log.warning('Not a valid number of channels (image not loaded?).')
+            return
+
         val = self.ctrl.actSpin.value() % self.image.nChannels
         self.ctrl.actSpin.setValue(val)
         self.image.rngChannel = val
@@ -378,23 +380,3 @@ class RingWindow(QMainWindow):
             self.stk.selectedZ = self.currZ
 
             self.statusbar.showMessage("Line %d selected" % self.selectedLine)
-
-
-if __name__ == '__main__':
-    from PyQt5.QtCore import QT_VERSION_STR
-    from PyQt5.Qt import PYQT_VERSION_STR
-
-    base_path = os.path.abspath('%s' % os.getcwd())
-    logging.getLogger('matplotlib').setLevel(logging.ERROR)
-    logging.info('Qt version:' + QT_VERSION_STR)
-    logging.info('PyQt version:' + PYQT_VERSION_STR)
-    logging.info('Working dir:' + os.getcwd())
-    logging.info('Base dir:' + base_path)
-    os.chdir(base_path)
-
-    app = QtGui.QApplication(sys.argv)
-
-    gui = RingWindow()
-    gui.show()
-
-    sys.exit(app.exec_())

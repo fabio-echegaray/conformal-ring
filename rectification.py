@@ -2,11 +2,15 @@ import logging
 import time
 
 import numpy as np
+import pyvista as pv
 from shapely.geometry import Polygon
 from skimage.transform import PiecewiseAffineTransform, warp
 from symfit import Eq, Fit, cos, parameters, pi, sin, variables
 from scipy.interpolate import UnivariateSpline
 
+import matplotlib.pyplot as plt
+
+import plots as p
 from gui._image_loading import retrieve_image
 from gui.measure import FileImageMixin
 
@@ -163,48 +167,65 @@ class FunctionRectification:
     log = logging.getLogger('FunctionRectification')
 
     # rectify the image using the approximated function directly
-    def __init__(self, curve: BaseApproximation, dl=1, n_dl=10, n_theta=50, pix_per_dl=100, pix_per_theta=100):
+    def __init__(self, curve: BaseApproximation, dl=1, pix_per_dl=1, pix_per_arclen=1):
         self._model = curve
 
         self.dl = dl
-        self.n_dl = n_dl
-        self.n_theta = n_theta
+        self.n_dl = None
+        self.arc_dl = np.inf
+        self.n_theta = 500  # min(n_theta) = 4
         self.pix_per_dl = pix_per_dl
-        self.pix_per_theta = pix_per_theta
+        self.pix_per_arclen = pix_per_arclen
 
-        self.out_rows = n_dl * pix_per_dl
-        self.out_cols = n_theta * pix_per_theta
+        self.out_rows = None
+        self.out_cols = None
 
-    def curve(self, cr_i):
-        theta = cr_i[0] / self.pix_per_theta / self.n_theta * 2 * np.pi
-        dl = cr_i[1] / self.pix_per_dl / self.n_dl * 2 * self.dl - self.dl
-        x0, y0 = self._model.f(theta)
-        o = self._model.normal_angle(theta)
-        _x = x0 + dl * np.cos(o)
-        _y = y0 + dl * np.sin(o)
-        return _x, _y
+        self.spline = None
+        self.ring = None
+
+    def _calc_theta(self):
+        self.theta_rng = np.linspace(0, 2 * np.pi, num=self.n_theta)
+        points = np.array([[*self._model.f(theta), 0] for theta in self.theta_rng])
+        spline = pv.Spline(points, self.n_theta).compute_arc_length()
+        self.arc_dl = max(np.diff(spline.get_array("arc_length")))
+
+        self.spline = spline
+
+    def _calc(self):
+        # calculate minimum number of theta steps to cover all pixels radially
+        self.n_dl = np.ceil(self.dl * 2 * self._model.pix_per_um / np.sqrt(2)).astype(int) * 2 + 1
+
+        # calculate minimum number of theta steps to cover all pixels tangentially
+        self._calc_theta()
+        while self.arc_dl > 1:
+            self.log.debug(f"step n_dl={self.n_dl}, n_theta={self.n_theta}, arc_dl={self.arc_dl}")
+            self._calc_theta()
+            self.n_theta += 10
+
+        self.ring = self.spline.ribbon(width=self.dl * self._model.pix_per_um, normal=(0, 0, 1))
+        self.out_rows = self.n_dl * self.pix_per_dl
+        self.out_cols = self.n_theta * self.pix_per_arclen
+
+        self.log.info(f"optimal n_dl={self.n_dl}, n_theta={self.n_theta}, arc_dl={self.arc_dl}, "
+                      f"out_rows={self.out_rows}, out_cols={self.out_cols}")
 
     @timeit
     def rectify(self, image):
         def rect_fn(cr: np.array):
-            # a function that transforms a (M, 2) array of (col, row)
-            return np.apply_along_axis(self.curve, axis=1, arr=cr)
+            # hack solution with the parameters we already know instead of using the input cr
+            k_dl = 0
+            out = np.empty(cr.shape)
+            pts = iter(self.ring.points)
+            thit = iter(self.theta_rng)
+            for p0, p1, th in zip(*[pts] * 2, thit):
+                x1 = np.linspace(p0[:2], p1[:2], num=self.n_dl)
+                out[k_dl:k_dl + self.n_dl] = x1
+                k_dl += self.n_dl
+            # print(out)
+            return out
 
+        self._calc()
         return warp(image, rect_fn, output_shape=(self.out_rows, self.out_cols))  # , order=2)
-
-    # def curve(self, cr: np.array):
-    #     # a function that transforms a (M, 2) array of (col, row)
-    #     theta = cr[:, 0] / self.pix_per_theta / self.n_theta * 2 * np.pi
-    #     dl = cr[:, 1] / self.pix_per_dl / self.n_dl * 2 * self.dl - self.dl
-    #     x0, y0 = self._model.f(theta)
-    #     o = self._model.normal_angle(theta)
-    #     cols = x0 + dl * np.cos(o)
-    #     rows = y0 + dl * np.sin(o)
-    #     return np.array([cols, rows])
-    #
-    # @timeit
-    # def rectify(self, image):
-    #     return warp(image, self.curve, output_shape=(self.out_rows, self.out_cols))  # , order=2)
 
 
 class TestFunctionRectification(FunctionRectification):
@@ -221,14 +242,17 @@ class TestFunctionRectification(FunctionRectification):
         # ax1.plot(self.src[:, 0], self.src[:, 1], '.b')
         ax1.axis((0, cols, rows, 0))
 
-        ax2.imshow(out, origin='lower')
-        # ax2.plot(self.transform.inverse(self.src)[:, 0], self.transform.inverse(self.src)[:, 1], '.b')
-        ax2.axis((0, self.out_cols, self.out_rows, 0))
+        # ext = (0, 2 * np.pi, -self.dl, self.dl)
+        ax2.imshow(out, origin='upper', interpolation='none', aspect='equal')#, extent=ext)
+        # ax2.xaxis.set_major_locator(plt.MultipleLocator(np.pi / 2))
+        # ax2.xaxis.set_minor_locator(plt.MultipleLocator(np.pi / 12))
+        # ax2.xaxis.set_major_locator(ticker.MultipleLocator(base=1.0))
+        # ax2.xaxis.set_major_formatter(ticker.FormatStrFormatter(r'%g $\pi$'))
 
         fig = plt.figure()
         ax = fig.gca()
         # ext = [0, t_dom.max(), dl_dom.max() * 2, 0]
-        plt.imshow(out, origin='lower', aspect='auto')  # , extent=ext)
+        plt.imshow(out, origin='upper', aspect='auto')  # , extent=ext)
         ax.set_title('Image rectification using original function')
 
         plt.show(block=False)
@@ -321,7 +345,6 @@ class TestPiecewiseLinearRectification(PiecewiseLinearRectification):
 
         ax2.imshow(out, origin='lower')
         # ax2.plot(self.transform.inverse(self.src)[:, 0], self.transform.inverse(self.src)[:, 1], '.b')
-        ax2.axis((0, self.out_cols, self.out_rows, 0))
 
         fig = plt.figure()
         ax = fig.gca()
@@ -337,10 +360,7 @@ class TestSplineApproximation(SplineApproximation):
         t = np.linspace(0, 2 * np.pi, num=len(self._poly.exterior.xy[0]))
         plot_fit(self._poly, self.f, t, title='Spline Approximation')
 
-    def plot_grid(self):
-        import matplotlib.pyplot as plt
-        import plots as p
-
+    def plot_grid(self, dna_ch=0, act_ch=2, width_dl=1, n_dl=5, n_theta=10):
         fig = plt.figure()
         ax = fig.gca()
 
@@ -349,8 +369,6 @@ class TestSplineApproximation(SplineApproximation):
         ax.set_xlim([min(xdata) - 2 * self.pix_per_um, max(xdata) + 2 * self.pix_per_um])
         ax.set_ylim([min(ydata) - 2 * self.pix_per_um, max(ydata) + 2 * self.pix_per_um])
 
-        dna_ch = 0
-        act_ch = 2
         image = retrieve_image(self.images, channel=dna_ch, number_of_channels=self.nChannels,
                                zstack=self.zstack, number_of_zstacks=self.nZstack, frame=0)
         ax.imshow(image, origin='lower', cmap='gray')
@@ -360,33 +378,71 @@ class TestSplineApproximation(SplineApproximation):
         ax.plot(pts[:, 0], pts[:, 1], linewidth=1, linestyle='-', c='blue')
         ax.set_title("Grid on image")
 
-        theta = np.linspace(0, 2 * np.pi, num=20)
+        theta = np.linspace(0, 2 * np.pi, num=n_theta)
         fx, fy = self.f(theta)
         ax.scatter(fx, fy, linewidth=1, marker='o', edgecolors='yellow', facecolors='none', label='x')
 
         # plot normals and tangents
-        dl_arr = np.linspace(-1, 1, num=5) * self.pix_per_um
-        # dl_arr = np.linspace(0, 1, num=3) * self.pix_per_um
+        dl_arr = np.linspace(-1, 1, num=n_dl) * self.pix_per_um
         for i, t in enumerate(theta):
             x0, y0 = self.f(t)
 
             o = self.normal_angle(t)
-            fnx, fny = np.array([(x0 + dl * np.cos(o), y0 + dl * np.sin(o)) for dl in dl_arr]).T
-            ax.plot(fnx, fny, linewidth=1, linestyle='-', c='white', marker='o', ms=1)
+            pts = np.array([(x0 + dl * np.cos(o), y0 + dl * np.sin(o)) for dl in dl_arr])
 
             th = self.tangent_angle(t)
             ftx, fty = np.array([(x0 + dl * np.cos(th), y0 + dl * np.sin(th)) for dl in dl_arr]).T
-            ax.plot(ftx, fty, linewidth=1, linestyle='-', c='red')
+            ax.plot(ftx, fty, linewidth=1, linestyle='-', c='red', marker='<')
 
-            plt.annotate((f"{i} ({t:.2f}): "
-                          f"T{np.rad2deg(th):.0f}º  "
-                          f"N{np.rad2deg(o):.0f}º "
-                          f"{np.sin(o):.2f} {np.cos(o):.2f}"), (x0, y0),
-                         (min(xdata) if x0 < c.x else max(xdata), y0), color="red",
-                         horizontalalignment='right' if x0 < c.x else 'left',
-                         arrowprops=dict(facecolor='white', shrink=0.05))
+            margin = 20
+            ax.annotate((f"{i} ({t:.2f}): "
+                         f"T{np.rad2deg(th):.0f}º  "
+                         f"N{np.rad2deg(o):.0f}º "
+                         f"{np.sin(o):.2f} {np.cos(o):.2f}"), xy=(x0, y0),
+                        xytext=(min(xdata) - margin if x0 < c.x else max(xdata) + margin, y0),
+                        color="red", size=10,
+                        horizontalalignment='right' if x0 < c.x else 'left',
+                        arrowprops=dict(arrowstyle='->', color='white', lw=0.5))
+
+        # calculate minimum number of theta steps to cover all pixels radially
+        n_dl = np.ceil(width_dl * 2 * self.pix_per_um / np.sqrt(2)).astype(int) * 2 + 1
+
+        # calculate minimum number of theta steps to cover all pixels tangentially
+        def calc_theta(n_th):
+            theta = np.linspace(0, 2 * np.pi, num=n_th)
+            points = np.array([[*self.f(theta), 0] for theta in theta])
+            spline = pv.Spline(points, n_th).compute_arc_length()
+            dl = max(np.diff(spline.get_array("arc_length")))
+            return theta, spline, dl
+
+        theta, spline, dl = calc_theta(n_theta)
+        while dl > 1:
+            n_theta += 10
+            theta, spline, dl = calc_theta(n_theta)
+
+        self.log.debug(f"Test: optimal n_dl={n_dl}, n_theta={n_theta}")
+        ring = spline.ribbon(width=width_dl * self.pix_per_um, normal=(0, 0, 1))
+
+        pts = iter(ring.points)
+        thit = iter(theta)
+        _ = next(thit)
+        p0, p1 = next(pts), next(pts)
+        for p2, p3, th in zip(*[pts] * 2, thit):
+            x1 = np.linspace(p0[:2], p1[:2], num=n_dl)
+            x2 = np.linspace(p2[:2], p3[:2], num=n_dl)
+            for i, j in zip(x1, x2):
+                ax.plot([i[0], j[0]], [i[1], j[1]], linewidth=1, linestyle='-', c='white', marker='o', ms=2, alpha=0.5)
+            p0 = p2
+            p1 = p3
 
         plt.show(block=False)
+
+        # p = pv.Plotter()
+        # mesh = ring
+        # p.add_mesh(mesh, show_edges=True, color='white')
+        # p.add_mesh(pv.PolyData(mesh.points), color='red', point_size=10, render_points_as_spheres=True)
+        # p.add_point_labels(mesh.points, ["%d" % i for i in range(mesh.n_points)], font_size=30, tolerance=0.1)
+        # p.show()
 
 
 def plot_fit(polygon: Polygon, fit_fn, t, title=""):
