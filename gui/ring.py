@@ -17,15 +17,10 @@ from gui.stack_ring import StkRingWidget
 from rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
 import measurements as m
 
-logger = logging.getLogger('ring.gui')
-
-pd.set_option('display.width', 320)
-pd.set_option('display.max_columns', 20)
-pd.set_option('display.max_rows', 100)
-
 
 # noinspection PyPep8Naming
 class RingWindow(QMainWindow):
+    log = logging.getLogger('gui.RingWindow')
     image: RingImageQLabel
     statusbar: QStatusBar
 
@@ -112,7 +107,7 @@ class RingWindow(QMainWindow):
         self.stk.close()
 
     def focusInEvent(self, QFocusEvent):
-        logger.debug('focusInEvent')
+        self.log.debug('focusInEvent')
         self.ctrl.activateWindow()
         self.grph.activateWindow()
         self.stk.focusInEvent(None)
@@ -155,7 +150,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onImgToggle(self):
-        logger.debug('onImgToggle')
+        self.log.debug('onImgToggle')
         if self.ctrl.dnaChk.isChecked():
             self.image.activeCh = "dna"
         if self.ctrl.actChk.isChecked():
@@ -163,13 +158,13 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onRenderChk(self):
-        logger.debug('onRenderChk')
+        self.log.debug('onRenderChk')
         self.image.renderMeasurements = self.ctrl.renderChk.isChecked()
         self.stk.renderMeasurements = self.ctrl.renderChk.isChecked()
 
     @QtCore.pyqtSlot()
     def onOpenButton(self):
-        logger.debug('onOpenButton')
+        self.log.debug('onOpenButton')
 
         # save current file measurements as a backup
         self._saveCurrentFileMeasurements()
@@ -212,16 +207,16 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onImgUpdate(self):
-        # logger.debug(f"onImgUpdate")
+        # self.log.debug(f"onImgUpdate")
         self.ctrl.renderChk.setChecked(True)
         self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-        logger.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
+        self.log.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
         self.stk.drawMeasurements(erase_bkg=True)
         self.grphtimer.start(1000)
 
     @QtCore.pyqtSlot()
     def onNucleusPickedFromImage(self):
-        logger.debug('onNucleusPickedFromImage')
+        self.log.debug('onNucleusPickedFromImage')
         self.stk.dnaChannel = self.image.dnaChannel
         self.stk.rngChannel = self.image.rngChannel
         self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
@@ -254,21 +249,21 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onMeasureButton(self):
-        logger.debug('onMeasureButton')
+        self.log.debug('onMeasureButton')
         self.image.paint_measures()
         self._graph(alpha=0.2)
         self._graphTendency()
 
     @QtCore.pyqtSlot()
     def onZValueChange(self):
-        logger.debug('onZValueChange')
+        self.log.debug('onZValueChange')
         self.image.zstack = self.ctrl.zSpin.value() % self.image.nZstack
         self.ctrl.zSpin.setValue(self.image.zstack)
         self._graph()
 
     @QtCore.pyqtSlot()
     def onDnaValChange(self):
-        logger.debug('onDnaValChange')
+        self.log.debug('onDnaValChange')
         val = self.ctrl.dnaSpin.value() % self.image.nChannels
         self.ctrl.dnaSpin.setValue(val)
         self.image.dnaChannel = val
@@ -278,7 +273,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onActValChange(self):
-        logger.debug('onActValChange')
+        self.log.debug('onActValChange')
         val = self.ctrl.actSpin.value() % self.image.nChannels
         self.ctrl.actSpin.setValue(val)
         self.image.rngChannel = val
@@ -288,7 +283,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onAddButton(self):
-        logger.debug('onAddButton')
+        self.log.debug('onAddButton')
         if self.currMeasurement is not None and self.currN is not None and self.currZ is not None:
             new = pd.DataFrame(self.currMeasurement)
             new = new.loc[(new["n"] == self.currN) & (new["z"] == self.currZ)]
@@ -305,7 +300,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onPlotButton(self):
-        logger.debug('onPlotButton')
+        self.log.debug('onPlotButton')
         if self.image.measurements is None: return
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -339,7 +334,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onLinePickedFromGraph(self):
-        logger.debug('onLinePickedFromGraph')
+        self.log.debug('onLinePickedFromGraph')
         self.selectedLine = self.grph.selectedLine if self.grph.selectedLine is not None else None
         if self.selectedLine is not None:
             self.image.selectedLine = self.selectedLine
@@ -354,13 +349,13 @@ class RingWindow(QMainWindow):
             try:
                 self.stk.drawMeasurements(erase_bkg=True)
             except Exception as e:
-                logger.error(e)
+                self.log.error(e)
 
             self.statusbar.showMessage("line %d selected" % self.selectedLine)
 
     @QtCore.pyqtSlot()
     def onLinePickedFromStackGraph(self):
-        logger.debug('onLinePickedFromStackGraph')
+        self.log.debug('onLinePickedFromStackGraph')
         self.selectedLine = self.stk.selectedLineId if self.stk.selectedLineId is not None else None
         if self.selectedLine is not None:
             self.currN = self.stk.selectedLineId
@@ -369,11 +364,11 @@ class RingWindow(QMainWindow):
             self.currZ = self.stk.selectedZ
 
             self.statusbar.showMessage(f"Line {self.currN} of z-stack {self.currZ} selected.")
-            logger.info(f"Line {self.currN} of z-stack {self.currZ} selected.")
+            self.log.info(f"Line {self.currN} of z-stack {self.currZ} selected.")
 
     @QtCore.pyqtSlot()
     def onLinePickedFromImage(self):
-        logger.debug('onLinePickedFromImage')
+        self.log.debug('onLinePickedFromImage')
         self.selectedLine = self.image.selectedLine if self.image.selectedLine is not None else None
         if self.selectedLine is not None:
             self.currN = self.selectedLine

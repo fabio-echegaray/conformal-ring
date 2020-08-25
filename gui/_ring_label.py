@@ -11,8 +11,6 @@ from skimage import draw
 from gui._image_loading import retrieve_image
 from gui.measure import Measure
 
-logger = logging.getLogger('gui.ring.label')
-
 
 def distance(a, b):
     return np.sqrt((a.x() - b.x()) ** 2 + (a.y() - b.y()) ** 2)
@@ -25,6 +23,7 @@ def is_between(c, a, b):
 
 # noinspection PyPep8Naming
 class RingImageQLabel(QLabel, Measure):
+    log = logging.getLogger('RingImageQLabel')
     clicked = Qt.pyqtSignal()
     lineUpdated = Qt.pyqtSignal()
     linePicked = Qt.pyqtSignal()
@@ -113,7 +112,7 @@ class RingImageQLabel(QLabel, Measure):
     @Measure.file.setter
     def file(self, file):
         if file is not None:
-            logger.info('Loading %s' % file)
+            self.log.info('Loading %s' % file)
             super(RingImageQLabel, type(self)).file.fset(self, file)
             self._repaint()
 
@@ -129,7 +128,7 @@ class RingImageQLabel(QLabel, Measure):
         self.update()
 
     def mouseMoveEvent(self, event):
-        # logger.debug('mouseMoveEvent')
+        # self.log.debug('mouseMoveEvent')
         if self.file is None:
             return
 
@@ -149,7 +148,7 @@ class RingImageQLabel(QLabel, Measure):
                     #     min(pts[0].y(), pts[1].y()), self.mousePos.y(), max(pts[0].y(), pts[1].y())))
                     if is_between(self.mousePos, pts[0], pts[1]):
                         if me['li'] != self.selectedLine:
-                            logger.debug(f"Mouse over line {me['li']}.")
+                            self.log.debug(f"Mouse over line {me['li']}.")
                             self.selectedLine = me['li']
                             self.lineUpdated.emit()
                             self._repaint()
@@ -163,7 +162,7 @@ class RingImageQLabel(QLabel, Measure):
         # convert to image pixel coords
         x = int(pos.x() * self.dwidth / self.width())
         y = int(pos.y() * self.dheight / self.height())
-        logger.debug(f'Clicked on (x,y)=({x},{y})')
+        self.log.debug(f'Clicked on (x,y)=({x},{y})')
 
         anyLineSelected = False
         lineChanged = False
@@ -175,7 +174,7 @@ class RingImageQLabel(QLabel, Measure):
                     if me['li'] != self.selectedLine:
                         lineChanged = True
                         self.selectedLine = me['li']
-                        logger.debug(f"Mouse click over line {me['li']}.")
+                        self.log.debug(f"Mouse click over line {me['li']}.")
                         break
 
         # check if pointer clicked inside any nuclei
@@ -184,7 +183,7 @@ class RingImageQLabel(QLabel, Measure):
             return
 
         if len(nucleus) == 1:
-            logger.debug(f"Nucleus {nucleus['id'].iloc[0]} selected by clicking.")
+            self.log.debug(f"Nucleus {nucleus['id'].iloc[0]} selected by clicking.")
             self.lines(nucleus['id'].iloc[0])
             nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
             self._selNuc = nucbnd
@@ -201,7 +200,7 @@ class RingImageQLabel(QLabel, Measure):
             self.clicked.emit()
 
     def paint_measures(self):
-        logger.debug("Painting measurements.")
+        self.log.debug("Painting measurements.")
         data = self.rngimage
 
         # map the data range to 0 - 255

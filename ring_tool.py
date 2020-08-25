@@ -11,6 +11,11 @@ logging.getLogger('gui').setLevel(logging.INFO)
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('PyQt5').setLevel(logging.ERROR)
 
+pd.set_option('display.width', 320)
+pd.set_option('display.max_columns', 20)
+pd.set_option('display.max_rows', 100)
+
+
 if __name__ == '__main__':
     import sys
     import os

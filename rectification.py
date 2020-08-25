@@ -10,8 +10,6 @@ from scipy.interpolate import UnivariateSpline
 from gui._image_loading import retrieve_image
 from gui.measure import FileImageMixin
 
-logger = logging.getLogger('rectification')
-
 
 def timeit(method):
     def timed(*args, **kw):
@@ -33,6 +31,8 @@ def timeit(method):
 #  2 - how to make the parametrization function of the arclength?
 
 class BaseApproximation(FileImageMixin):
+    log = logging.getLogger('BaseApproximation')
+
     def __init__(self, polygon: Polygon, image):
         super(FileImageMixin, self).__init__()
         self._load_image(image)
@@ -105,7 +105,7 @@ def harmonic_approximation(polygon: Polygon, n=3):
         Eq(fourier.subs({x: 0}), fourier.subs({x: 2 * pi})),
         Eq(fourier.diff(x).subs({x: 0}), fourier.diff(x).subs({x: 2 * pi})),
         # Eq(fourier.diff(x, 2).subs({x: 0}), fourier.diff(x, 2).subs({x: 2 * pi})),
-    ]
+        ]
     print(constr)
 
     fit_x = Fit(model_dict, x=t, y=xdata, constraints=constr)
@@ -121,8 +121,8 @@ def harmonic_approximation(polygon: Polygon, n=3):
             [
                 fit_x.model(x=_t, **fitx_result.params).y,
                 fit_y.model(x=_t, **fity_result.params).y
-            ]
-        ).ravel()
+                ]
+            ).ravel()
 
     # code to test if fit is correct
     plot_fit(polygon, curve_lambda, t, title='Harmonic Approximation')
@@ -131,6 +131,8 @@ def harmonic_approximation(polygon: Polygon, n=3):
 
 
 class SplineApproximation(BaseApproximation):
+    log = logging.getLogger('SplineApproximation')
+
     def __init__(self, polygon: Polygon, image):
         super(SplineApproximation, self).__init__(polygon, image)
         self.approximate_fn()
@@ -158,6 +160,8 @@ class SplineApproximation(BaseApproximation):
 
 
 class FunctionRectification:
+    log = logging.getLogger('FunctionRectification')
+
     # rectify the image using the approximated function directly
     def __init__(self, curve: BaseApproximation, dl=1, n_dl=10, n_theta=50, pix_per_dl=100, pix_per_theta=100):
         self._model = curve
@@ -231,6 +235,8 @@ class TestFunctionRectification(FunctionRectification):
 
 
 class PiecewiseLinearRectification:
+    log = logging.getLogger('PiecewiseLinearRectification')
+
     # rectify the image using a piecewise affine transform from skimage library
     def __init__(self, curve: BaseApproximation, dl=1, n_dl=10, n_theta=50, pix_per_dl=100, pix_per_theta=100):
         self._model = curve
@@ -275,7 +281,7 @@ class PiecewiseLinearRectification:
 
             for j in range(self.src_rows.shape[1]):
                 dl = self.src_rows[i, j]
-                logger.debug(f"debug i={j},  j={i}, dl={dl:.2f}   src_cols[i, j]-t={self.src_cols[i, j] - t:.3f}")
+                self.log.debug(f"debug i={j},  j={i}, dl={dl:.2f}   src_cols[i, j]-t={self.src_cols[i, j] - t:.3f}")
                 self.src_cols[i, j] = x0 + dl * cos_o
                 self.src_rows[i, j] = y0 + dl * sin_o
 

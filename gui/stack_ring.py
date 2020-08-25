@@ -12,13 +12,11 @@ import shapely.wkt
 
 from gui._widget_graph import GraphWidget
 from gui.measure import Measure
-import measurements as m
-
-logger = logging.getLogger('ring.stk.gui')
 
 
 # noinspection PyPep8Naming
 class StkRingWidget(QWidget):
+    log = logging.getLogger('gui.StkRingWidget')
     images: List[QLabel]
     linePicked = Qt.pyqtSignal()
 
@@ -70,14 +68,14 @@ class StkRingWidget(QWidget):
         self.grph.move(self.geometry().bottomLeft())
 
     def moveEvent(self, QMoveEvent):
-        logger.debug("moveEvent")
+        self.log.debug("moveEvent")
         self.grph.move(self.geometry().bottomLeft())
 
     def closeEvent(self, event):
         self.grph.close()
 
     def focusInEvent(self, QFocusEvent):
-        logger.debug('focusInEvent')
+        self.log.debug('focusInEvent')
         # self.activateWindow()
         self.grph.activateWindow()
 
@@ -89,7 +87,7 @@ class StkRingWidget(QWidget):
     def mouseReleaseEvent(self, ev):
         for k, im in enumerate(self.images):
             if im.underMouse():
-                logger.info(f"Image {k} clicked.")
+                self.log.info(f"Image {k} clicked.")
                 self.selectedZ = k
                 n = self._nucboundaries[k]
                 if not n:
@@ -120,7 +118,7 @@ class StkRingWidget(QWidget):
         y1, y2 = int(xy[1] - wh[1] / 2), int(xy[1] + wh[1] / 2)
         self._images = images[:, y1:y2, x1:x2]
         if self._images.size == 0:
-            logger.warning(f"Empty cropped image! x1,x2,y1,y2 ({x1},{x2},{y1},{y2})")
+            self.log.warning(f"Empty cropped image! x1,x2,y1,y2 ({x1},{x2},{y1},{y2})")
 
         self._pixmaps = list()
 
@@ -139,7 +137,7 @@ class StkRingWidget(QWidget):
 
     def measure(self):
         if self._images.size == 0:
-            logger.warning("Can't measure an empty image!")
+            self.log.warning("Can't measure an empty image!")
             return
 
         _old_zstk = self._meas.zstack
@@ -185,7 +183,7 @@ class StkRingWidget(QWidget):
                     nucb_qpoints = [Qt.QPoint(x, y) for x, y in n.buffer(d).exterior.coords]
                     painter.drawPolygon(Qt.QPolygon(nucb_qpoints))
             except Exception as e:
-                logger.error(e)
+                self.log.error(e)
 
             if self.selectedLineId is not None:
                 alpha = angle_delta * self.selectedLineId
@@ -234,10 +232,10 @@ class StkRingWidget(QWidget):
 
     @QtCore.pyqtSlot()
     def onLinePickedFromGraph(self):
-        logger.debug('onLinePickedFromGraph')
+        self.log.debug('onLinePickedFromGraph')
         self.selectedZ = self.grph.selectedLine if self.grph.selectedLine is not None else None
         if self.selectedZ is not None:
-            logger.debug(f"Z {self.selectedZ} selected")
+            self.log.debug(f"Z {self.selectedZ} selected")
             self.drawMeasurements(erase_bkg=True)
 
             # self.emit(QtCore.SIGNAL('linePicked()'))
