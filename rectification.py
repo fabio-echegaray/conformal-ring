@@ -163,6 +163,9 @@ class SplineApproximation(BaseApproximation):
         self._dfn_dt = lambda o: np.array([dsplx_dt(o), dsply_dt(o)])
 
 
+_inc_theta = 500
+
+
 class FunctionRectification:
     log = logging.getLogger('FunctionRectification')
 
@@ -173,7 +176,7 @@ class FunctionRectification:
         self.dl = dl
         self.n_dl = None
         self.arc_dl = np.inf
-        self.n_theta = 500  # min(n_theta) = 4
+        self.n_theta = _inc_theta  # min(n_theta) = 4
         self.pix_per_dl = pix_per_dl
         self.pix_per_arclen = pix_per_arclen
 
@@ -200,7 +203,7 @@ class FunctionRectification:
         while self.arc_dl > 1:
             self.log.debug(f"step n_dl={self.n_dl}, n_theta={self.n_theta}, arc_dl={self.arc_dl}")
             self._calc_theta()
-            self.n_theta += 10
+            self.n_theta += _inc_theta
 
         self.ring = self.spline.ribbon(width=self.dl * self._model.pix_per_um, normal=(0, 0, 1))
         self.out_rows = self.n_dl * self.pix_per_dl
@@ -243,7 +246,7 @@ class TestFunctionRectification(FunctionRectification):
         ax1.axis((0, cols, rows, 0))
 
         # ext = (0, 2 * np.pi, -self.dl, self.dl)
-        ax2.imshow(out, origin='upper', interpolation='none', aspect='equal')#, extent=ext)
+        ax2.imshow(out, origin='upper', interpolation='none', aspect='equal')  # , extent=ext)
         # ax2.xaxis.set_major_locator(plt.MultipleLocator(np.pi / 2))
         # ax2.xaxis.set_minor_locator(plt.MultipleLocator(np.pi / 12))
         # ax2.xaxis.set_major_locator(ticker.MultipleLocator(base=1.0))
@@ -388,8 +391,6 @@ class TestSplineApproximation(SplineApproximation):
             x0, y0 = self.f(t)
 
             o = self.normal_angle(t)
-            pts = np.array([(x0 + dl * np.cos(o), y0 + dl * np.sin(o)) for dl in dl_arr])
-
             th = self.tangent_angle(t)
             ftx, fty = np.array([(x0 + dl * np.cos(th), y0 + dl * np.sin(th)) for dl in dl_arr]).T
             ax.plot(ftx, fty, linewidth=1, linestyle='-', c='red', marker='<')

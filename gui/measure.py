@@ -147,6 +147,14 @@ class Measure(FileImageMixin):
     def dheight(self):
         return self._rngimage.shape[1] if self._rngimage is not None else 0
 
+    def measure_all_nuclei(self):
+        __z_stack = self.zstack
+        for zst in range(self.nZstack):
+            self.zstack = zst
+            self._measure_nuclei()
+
+        self.zstack = __z_stack
+
     def _measure_nuclei(self):
         if self.dnaimage is None:
             return
@@ -162,13 +170,13 @@ class Measure(FileImageMixin):
 
             self.measurements = self.measurements.append(
                 {
-                    'x': _x,
-                    'y': _y,
-                    'z': self.zstack,
-                    'type': 'nucleus',
+                    'x':     _x,
+                    'y':     _y,
+                    'z':     self.zstack,
+                    'type':  'nucleus',
                     'value': shapely.wkt.dumps(nucbnd, rounding_precision=4),
-                    'id': nucleus['id']
-                },
+                    'id':    nucleus['id']
+                    },
                 ignore_index=True)
 
     def _measure_lines_around_nuclei(self, _id):
@@ -189,25 +197,25 @@ class Measure(FileImageMixin):
             if ls is not None:
                 self.measurements = self.measurements.append(
                     {
-                        'x': _x,
-                        'y': _y,
-                        'z': self.zstack,
-                        'type': 'line',
+                        'x':     _x,
+                        'y':     _y,
+                        'z':     self.zstack,
+                        'type':  'line',
                         'value': l,
-                        'id': nucleus['id'].iloc[0],
-                        'li': k,
-                        'c': colr,
-                        'ls0': ls.coords[0],
-                        'ls1': ls.coords[1],
-                        'd': max(l) - min(l),
-                        'sum': np.sum(l)
-                    },
+                        'id':    nucleus['id'].iloc[0],
+                        'li':    k,
+                        'c':     colr,
+                        'ls0':   ls.coords[0],
+                        'ls1':   ls.coords[1],
+                        'd':     max(l) - min(l),
+                        'sum':   np.sum(l)
+                        },
                     ignore_index=True)
 
     def nucleus(self, *args):
-        if len(args) == 1 and isinstance(args[0], int):
+        if len(args) == 1 and np.isscalar(args[0]):
             _id = args[0]
-            return self._nucleus(_id)
+            return self._nucleus(int(_id))
 
         elif len(args) == 2 and np.all([np.issubdtype(type(a), np.integer) for a in args]):
             x, y = args[0], args[1]
@@ -227,6 +235,8 @@ class Measure(FileImageMixin):
                 return pd.DataFrame()
 
             return self._nucleus(nuclei['id'].iloc[0])
+        else:
+            raise AttributeError("Parameter no recognized.")
 
     def _nucleus(self, _id):
         return get_from_df(self.measurements, 'nucleus', _id, self.zstack)
@@ -234,7 +244,7 @@ class Measure(FileImageMixin):
     @property
     def nuclei(self):
         if self.measurements.empty:
-            return pd.DataFrame()
+            self._measure_nuclei()
 
         return self.measurements[
             (self.measurements['type'] == 'nucleus') &
