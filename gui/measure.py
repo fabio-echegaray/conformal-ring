@@ -4,7 +4,6 @@ import logging
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import shapely.wkt
 from shapely.geometry.point import Point
 
 from gui._image_loading import find_image, qpixmap_from, retrieve_image
@@ -88,6 +87,15 @@ class Measure(FileImageMixin):
         if value is not None:
             super(Measure, type(self)).file.fset(self, value)
             self.measurements = pd.DataFrame()
+
+    @FileImageMixin.zstack.setter
+    def zstack(self, value):
+        if value is not None:
+            super(Measure, type(self)).zstack.fset(self, value)
+            self._dnaimage = None
+            self._rngimage = None
+            self._dnapixmap = None
+            self._rngpixmap = None
 
     @property
     def dnaChannel(self):
