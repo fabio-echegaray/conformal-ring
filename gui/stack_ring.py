@@ -67,20 +67,11 @@ class StkRingWidget(QWidget):
         self.grphtimer.timeout.connect(self._graph)
 
         self.setWindowTitle('Stack images')
-        self.grph.show()
-        self.show()
-        self.moveEvent(None)
+        self.grph.move(self.geometry().bottomLeft())
 
     def moveEvent(self, QMoveEvent):
         logger.debug("moveEvent")
-        px = self.geometry().x()
-        py = self.geometry().y()
-        pw = self.geometry().width()
-        ph = self.geometry().height()
-
-        # dw = self.grph.width()
-        dh = self.grph.height()
-        self.grph.setGeometry(px, py + ph + 20, pw, dh)
+        self.grph.move(self.geometry().bottomLeft())
 
     def closeEvent(self, event):
         self.grph.close()
@@ -91,18 +82,23 @@ class StkRingWidget(QWidget):
         self.grph.activateWindow()
 
     def showEvent(self, event):
+        self.grph.show()
+        self.show()
         self.setFocus()
 
     def mouseReleaseEvent(self, ev):
         for k, im in enumerate(self.images):
             if im.underMouse():
-                logger.info(f"image {k} clicked.")
+                logger.info(f"Image {k} clicked.")
                 self.selectedZ = k
+                n = self._nucboundaries[k]
+                if not n:
+                    continue
+
                 self.linePicked.emit()
 
-        self._repaintImages()
+        self.drawMeasurements(erase_bkg=True)
         self._graph()
-        self.drawMeasurements()
 
     def _repaintImages(self):
         for i in range(len(self._pixmaps)):
@@ -137,7 +133,7 @@ class StkRingWidget(QWidget):
             self._pixmaps.append(cropped)
         self._meas.zstack = _old_zstk
 
-        self._repaintImages()
+        self.drawMeasurements(erase_bkg=True)
         self.update()
         return
 
@@ -168,6 +164,7 @@ class StkRingWidget(QWidget):
             self._repaintImages()
         angle_delta = 2 * np.pi / self.nlines
         nim, width, height = self._images.shape
+        w, h = self.wh
 
         for i, n in enumerate(self._nucboundaries):
             if not n:
@@ -204,7 +201,7 @@ class StkRingWidget(QWidget):
                     else:
                         painter.setPen(QPen(QBrush(QColor('gray')), 0.1 * self._meas.pix_per_um))
 
-                    pts = [Qt.QPoint(x, y) for x, y in [me['ls0'], me['ls1']]]
+                    pts = [Qt.QPoint(_x - x + h / 2, _y - y + w / 2) for _x, _y in [me['ls0'], me['ls1']]]
                     painter.drawLine(pts[0], pts[1])
 
             painter.end()
@@ -241,8 +238,7 @@ class StkRingWidget(QWidget):
         self.selectedZ = self.grph.selectedLine if self.grph.selectedLine is not None else None
         if self.selectedZ is not None:
             logger.debug(f"Z {self.selectedZ} selected")
-            self._repaintImages()
-            self.drawMeasurements()
+            self.drawMeasurements(erase_bkg=True)
 
             # self.emit(QtCore.SIGNAL('linePicked()'))
             # self.linePicked.emit()
@@ -255,5 +251,4 @@ class StkRingWidget(QWidget):
     def renderMeasurements(self, value):
         if value is not None:
             self._render = value
-            self._repaintImages()
-            self.drawMeasurements()
+            self.drawMeasurements(erase_bkg=True)

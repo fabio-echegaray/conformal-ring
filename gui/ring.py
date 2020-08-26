@@ -57,7 +57,6 @@ class RingWindow(QMainWindow):
         self.image.rngChannel = self.ctrl.actSpin.value()
 
         self.grph = GraphWidget()
-        self.grph.show()
         self.grphtimer = QTimer()
         self.grphtimer.setSingleShot(True)
 
@@ -82,6 +81,7 @@ class RingWindow(QMainWindow):
         self.file = "/Users/Fabio/data/lab/airyscan/nil.czi"
 
         self.show()
+        self.grph.show()
         self.stk.show()
         self.ctrl.show()
         self.move(0, 0)
@@ -181,29 +181,34 @@ class RingWindow(QMainWindow):
         flt = "zeiss(*.czi)"
         f = QFileDialog.getOpenFileName(qfd, "Open File", path, flt)
         if len(f) > 0:
-            self.image.file = f[0]
-            self.image.zstack = self.ctrl.zSpin.value()
-            self.image.dnaChannel = self.ctrl.dnaSpin.value()
-            self.ctrl.nchLbl.setText("%d channels" % self.image.nChannels)
-            self.ctrl.nzsLbl.setText("%d z-stacks" % self.image.nZstack)
-            self.ctrl.nfrLbl.setText("%d %s" % (self.image.nFrames, "frames" if self.image.nFrames > 1 else "frame"))
-            self.currMeasurement = None
-            self.currN = None
-            self.currZ = None
+            self._open(f[0])
 
-            self.stk.close()
-            self.stk = StkRingWidget(self.image,
-                                     nucleus_id=self.image.currNucleusId,
-                                     linePicked=self.onLinePickedFromStackGraph,
-                                     line_length=self.line_length,
-                                     dl=self.image.dl,
-                                     lines_to_measure=self.image._nlin
-                                     )
-            # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
-            self.stk.loadImages(self.image.images, xy=(100, 100), wh=(200, 200))
-            self.stk.hide()
-            self.stk.show()
-            self.moveEvent(None)
+    def _open(self, fname):
+        assert type(fname) is str and len(fname) > 0, "No filename given!"
+        self.file = fname
+        self.image.file = fname
+        self.image.zstack = self.ctrl.zSpin.value()
+        self.image.dnaChannel = self.ctrl.dnaSpin.value()
+        self.ctrl.nchLbl.setText("%d channels" % self.image.nChannels)
+        self.ctrl.nzsLbl.setText("%d z-stacks" % self.image.nZstack)
+        self.ctrl.nfrLbl.setText("%d %s" % (self.image.nFrames, "frames" if self.image.nFrames > 1 else "frame"))
+        self.currMeasurement = None
+        self.currN = None
+        self.currZ = None
+
+        self.stk.close()
+        self.stk = StkRingWidget(self.image,
+                                 nucleus_id=self.image.currNucleusId,
+                                 linePicked=self.onLinePickedFromStackGraph,
+                                 line_length=self.line_length,
+                                 dl=self.image.dl,
+                                 lines_to_measure=self.image._nlin
+                                 )
+        # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
+        self.stk.loadImages(self.image.images, xy=(100, 100), wh=(200, 200))
+        self.stk.hide()
+        self.stk.show()
+        self.moveEvent(None)
 
     @QtCore.pyqtSlot()
     def onImgUpdate(self):
@@ -245,7 +250,7 @@ class RingWindow(QMainWindow):
         self.stk.loadImages(self.image.images, xy=[n[0] for n in self.image.currNucleus.centroid.xy],
                             wh=(r * self.image.pix_per_um, r * self.image.pix_per_um))
         self.stk.measure()
-        self.stk.drawMeasurements()
+        self.stk.drawMeasurements(erase_bkg=True)
 
     @QtCore.pyqtSlot()
     def onMeasureButton(self):
@@ -356,30 +361,28 @@ class RingWindow(QMainWindow):
     @QtCore.pyqtSlot()
     def onLinePickedFromStackGraph(self):
         logger.debug('onLinePickedFromStackGraph')
-        self.selectedLine = self.stk.selectedLine if self.stk.selectedLine is not None else None
+        self.selectedLine = self.stk.selectedLineId if self.stk.selectedLineId is not None else None
         if self.selectedLine is not None:
-            self.currMeasurement = self.stk.measurements
-            self.currN = self.stk.selectedLine
+            self.currN = self.stk.selectedLineId
             self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
             self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
             self.currZ = self.stk.selectedZ
 
-            self.statusbar.showMessage(f"line {self.currN} of z-stack {self.currZ} selected.")
-            logger.info(f"line {self.currN} of z-stack {self.currZ} selected.")
+            self.statusbar.showMessage(f"Line {self.currN} of z-stack {self.currZ} selected.")
+            logger.info(f"Line {self.currN} of z-stack {self.currZ} selected.")
 
     @QtCore.pyqtSlot()
     def onLinePickedFromImage(self):
         logger.debug('onLinePickedFromImage')
         self.selectedLine = self.image.selectedLine if self.image.selectedLine is not None else None
         if self.selectedLine is not None:
-            self.currMeasurement = self.image.measurements
             self.currN = self.selectedLine
             self.currZ = self.image.zstack
             self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
             self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
             self.stk.selectedZ = self.currZ
 
-            self.statusbar.showMessage("line %d selected" % self.selectedLine)
+            self.statusbar.showMessage("Line %d selected" % self.selectedLine)
 
 
 if __name__ == '__main__':
