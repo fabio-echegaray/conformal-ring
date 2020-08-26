@@ -43,7 +43,7 @@ def image(**kwargs):
     ax = plt.gca()
     data = kwargs.pop("data")
     me = kwargs.pop("measurements")
-    folder = kwargs.pop("folder")
+    folder = kwargs.pop("folder", None)
     fname = kwargs.pop("filename")
 
     nid, ch, zst = data[['id', 'ch', 'z']].astype(int).values[0]
@@ -93,20 +93,58 @@ def rectify(path):
                 for zst, zdf in nuclei.groupby(["z"]):
                     zst = int(zst)
                     logger.debug(f"Processing zstack={zst}.")
-                    folder = ensure_dir(os.path.join(sub_path, f"z_{zst}"))
                     g = sns.FacetGrid(data=zdf,
                                       row='id', col='ch', col_order=[0, 2, 1],
                                       height=0.9, aspect=2,
                                       despine=True, margin_titles=True,
                                       gridspec_kws={"wspace": 0.1}
                                       )
-                    g.map_dataframe(image, measurements=me, folder=folder, filename=fname)
-                    g.fig.suptitle('\r\n    '.join(p.parts[-2:]))
-                    g.savefig(os.path.join(folder, f"rectification_summary.pdf"))
+                    g.map_dataframe(image, measurements=me, filename=fname)
+                    g.fig.suptitle('\n    '.join(p.parts[-2:]))
+                    g.savefig(os.path.join(sub_path, f"rectification_summary_z{zst}.pdf"))
+            bar.update()
+    manager.stop()
+
+
+def overview(path):
+    manager = enlighten.get_manager()
+
+    for root, directories, filenames in os.walk(os.path.join(path)):
+        bar = manager.counter(total=len(filenames), desc='Progress', unit='files')
+        for k, filename in enumerate(filenames):
+            ext = filename.split('.')[-1]
+            if ext == 'czi':
+                logger.info(f"Processing {filename}")
+                fname = os.path.join(root, filename)
+                me = Measure()
+                me.file = fname
+                me.dnaChannel = 0
+                me.rngChannel = 2
+                me.measure_all_nuclei()
+
+                p = Path(fname)
+                sub_path = ensure_dir(os.path.join(out_dir, *p.parts[-3:], "nucleus"))
+
+                nuclei = me.measurements \
+                    .query("type ==  'nucleus'") \
+                    .pipe(nucleus,
+                          nucleus_col='value',
+                          radius_min=5 * me.pix_per_um,
+                          radius_max=13.5 * me.pix_per_um)
+
+                fig = plt.figure(1, size_square, dpi=150)
+                ax = fig.gca()
+                for zst, zdf in nuclei.groupby(["z"]):
+                    zst = int(zst)
+                    ax.cla()
+                    me.zstack = zst
+                    me.drawMeasurements(ax)
+                    fig.savefig(os.path.join(sub_path, f"boundaries_summary_z{zst}.pdf"))
             bar.update()
     manager.stop()
 
 
 if __name__ == '__main__':
     p = os.path.join('/Volumes/Kidbeat/data/lab/airy-ring')
+    overview(p)
     rectify(p)

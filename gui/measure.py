@@ -275,6 +275,24 @@ class Measure(FileImageMixin):
         else:
             return get_from_df(self.measurements, 'line', _id, self.zstack)
 
+    def drawMeasurements(self, ax):
+        from shapely import affinity
+        import plots as p
+
+        img = self.rngimage
+        ext = (0, self.dwidth / self.pix_per_um, 0, self.dheight / self.pix_per_um)
+        ax.imshow(img, extent=ext, origin='lower', interpolation='none', cmap='gray')
+
+        for _, n in self.nuclei.iterrows():
+            n_um = affinity.scale(n["value"], xfact=self.um_per_pix, yfact=self.um_per_pix, origin=(0, 0, 0))
+            p.render_polygon(n_um, zorder=10, ax=ax)
+            ax.text(n_um.centroid.x, n_um.centroid.y, int(n["id"]), color='w', fontdict={'size': 7},
+                    ha='center', va='center_baseline')
+
+        x0, y0 = 5, 5
+        ax.plot([x0, x0 + 10], [y0, y0], c='w', lw=2)
+        ax.text(x0, y0 + 5.5, '10 um', color='w', fontdict={'size': 7})
+
 
 def get_from_df(df, _type, _id, z):
     if df.empty:

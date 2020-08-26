@@ -1,5 +1,6 @@
-import logging
+import io
 import os
+import logging
 import xml.etree.ElementTree
 from collections import namedtuple
 
