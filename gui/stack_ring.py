@@ -148,7 +148,7 @@ class StkRingWidget(QWidget):
             w, h = self.wh
             nuc = self._meas.nucleus(x, y)
             if not nuc.empty:
-                nucbnd = affinity.translate(shapely.wkt.loads(nuc["value"].iloc[0]), -x + h / 2, -y + w / 2)
+                nucbnd = affinity.translate(nuc["value"].iloc[0], -x + h / 2, -y + w / 2)
                 self._nucboundaries.append(nucbnd)
             else:
                 self._nucboundaries.append(None)

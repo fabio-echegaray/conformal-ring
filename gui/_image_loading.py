@@ -104,19 +104,20 @@ def find_image(img_name, folder=None):
                 return load_zeiss(joinf)
 
 
-def retrieve_image(image_arr, frame=0, zstack=0, channel=0, number_of_channels=1, number_of_zstacks=1):
+def retrieve_image(image_arr, frame=0, zstack=0, channel=0, number_of_channels=1, number_of_zstacks=1, to_8bit=True):
     if image_arr is not None:
         ix = frame * (number_of_channels * number_of_zstacks) + zstack * number_of_channels + channel
         logger.debug("Retrieving frame %d of channel %d at z-stack=%d (index=%d)" % (frame, channel, zstack, ix))
 
-        # normalize and convert image to unsigned 8 bit
         data = image_arr[ix]
-        info = np.iinfo(data.dtype)  # Get the information of the incoming image type
-        data = data.astype(np.float64) / info.max  # normalize the data to 0 - 1
-        data = 255 * data  # Now scale by 255
-        img = data.astype(np.uint8)
+        # normalize and convert image to unsigned 8 bit
+        if to_8bit:
+            info = np.iinfo(data.dtype)  # Get the information of the incoming image type
+            data = data.astype(np.float64) / info.max  # normalize the data to 0 - 1
+            data = 255 * data  # Now scale by 255
+            data = data.astype(np.uint8)
 
-        return img
+        return data
 
 
 def image_iterator(image_arr, channel=0, number_of_frames=1):

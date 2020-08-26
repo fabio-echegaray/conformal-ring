@@ -3,13 +3,13 @@ import logging
 
 import numpy as np
 from PyQt5 import Qt, QtCore, QtGui
-from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QFont
 from PyQt5.QtWidgets import QLabel
-import shapely.wkt
 from skimage import draw
 
 from gui._image_loading import retrieve_image
 from gui.measure import Measure
+from filters import nucleus
 
 
 def distance(a, b):
@@ -53,7 +53,7 @@ class RingImageQLabel(QLabel, Measure):
     @property
     def currNucleus(self):
         # print(self.nucleus(self.currNucleusId))
-        return shapely.wkt.loads(self.nucleus(self.currNucleusId)["value"].iloc[0])
+        return self.nucleus(self.currNucleusId)["value"].iloc[0]
 
     @property
     def activeCh(self):
@@ -183,9 +183,16 @@ class RingImageQLabel(QLabel, Measure):
             return
 
         if len(nucleus) == 1:
-            self.log.debug(f"Nucleus {int(nucleus['id'].iloc[0])} selected by clicking.")
+            item = nucleus.iloc[0]
+            nid = int(item['id'])
+            nuc = item['value']
+            self.log.debug(f"Nucleus {nid} selected by clicking.\r\n"
+                           f"    Area={nuc.area :.2f}[pix^2]\r\n"
+                           f"        ={nuc.area / self.pix_per_um ** 2 :.2f}[um^2],\r\n"
+                           f"    equivalent radius={np.sqrt(nuc.area / np.pi):.2f}[pix]\r\n"
+                           f"                     ={np.sqrt(nuc.area / np.pi) / self.pix_per_um:.2f}[um].")
             self.lines(nucleus['id'].iloc[0])
-            nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
+            nucbnd = nucleus["value"].iloc[0]
             self._selNuc = nucbnd
             self.currNucleusId = int(nucleus["id"].iloc[0])
             self.nucleusPicked.emit()
@@ -204,7 +211,8 @@ class RingImageQLabel(QLabel, Measure):
         data = self.rngimage
 
         # map the data range to 0 - 255
-        img8bit = ((data - data.min()) / (data.ptp() / 255.0)).astype(np.uint8)
+        # img8bit = ((data - data.min()) / (data.ptp() / 255.0)).astype(np.uint8)
+        img8bit = data
 
         for me in self.measurements:
             r0, c0, r1, c1 = np.array(list(me['ls0']) + list(me['ls1'])).astype(int)
@@ -264,7 +272,7 @@ class RingImageQLabel(QLabel, Measure):
             nuc_pen.setStyle(QtCore.Qt.DotLine)
             painter.setPen(nuc_pen)
             for i, e in self.nuclei.iterrows():
-                n = shapely.wkt.loads(e["value"])
+                n = e["value"]
                 if e["id"] == self.currNucleusId:
                     brush = QBrush(QtCore.Qt.BDiagPattern)
                     brush.setColor(QColor('yellow'))
@@ -283,6 +291,15 @@ class RingImageQLabel(QLabel, Measure):
             painter.setPen(QPen(QBrush(QColor(me['c'])), thickness))
             pts = [Qt.QPoint(x, y) for x, y in [me['ls0'], me['ls1']]]
             painter.drawLine(pts[0], pts[1])
+
+        painter.setPen(QPen(QBrush(QColor('red')), 3))
+        painter.setFont(QFont("arial", 60))
+        for ix, nrow in self.nuclei.pipe(nucleus,
+                                         nucleus_col='value',
+                                         radius_min=5 * self.pix_per_um,
+                                         radius_max=13.5 * self.pix_per_um).iterrows():
+            nuc = nrow["value"]
+            painter.drawText(nuc.centroid.x, nuc.centroid.y, f"{int(nrow['id'])}")
 
         painter.end()
 

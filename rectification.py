@@ -16,6 +16,8 @@ from gui.measure import FileImageMixin
 
 
 def timeit(method):
+    log = logging.getLogger('timeit')
+
     def timed(*args, **kw):
         ts = time.time()
         result = method(*args, **kw)
@@ -24,7 +26,7 @@ def timeit(method):
             name = kw.get('log_name', method.__name__.upper())
             kw['log_time'][name] = int((te - ts) * 1000)
         else:
-            print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
+            log.debug('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
         return result
 
     return timed
@@ -202,8 +204,8 @@ class FunctionRectification:
         self._calc_theta()
         while self.arc_dl > 1:
             self.log.debug(f"step n_dl={self.n_dl}, n_theta={self.n_theta}, arc_dl={self.arc_dl}")
-            self._calc_theta()
             self.n_theta += _inc_theta
+            self._calc_theta()
 
         self.ring = self.spline.ribbon(width=self.dl * self._model.pix_per_um, normal=(0, 0, 1))
         self.out_rows = self.n_dl * self.pix_per_dl

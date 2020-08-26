@@ -174,7 +174,7 @@ class Measure(FileImageMixin):
                     'y':     _y,
                     'z':     self.zstack,
                     'type':  'nucleus',
-                    'value': shapely.wkt.dumps(nucbnd, rounding_precision=4),
+                    'value': nucbnd,
                     'id':    nucleus['id']
                     },
                 ignore_index=True)
@@ -187,7 +187,7 @@ class Measure(FileImageMixin):
                                     (self.measurements['id'] == _id) &
                                     (self.measurements['z'] == self.zstack)
                                     ]
-        nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
+        nucbnd = nucleus["value"].iloc[0]
         _x, _y = np.array(nucbnd.centroid.coords).astype(np.int16)[0]
         self.log.debug(f"({_x},{_y})")
 
@@ -227,7 +227,7 @@ class Measure(FileImageMixin):
                 self._measure_nuclei()
             nuclei = self.measurements[
                 (self.measurements['type'] == 'nucleus') & (self.measurements['z'] == self.zstack)]
-            nuclei = nuclei[nuclei.apply(lambda row: shapely.wkt.loads(row['value']).contains(pt), axis=1)]
+            nuclei = nuclei[nuclei.apply(lambda row: row['value'].contains(pt), axis=1)]
             self.log.debug(f"{len(nuclei)} nuclei found.")
             assert len(nuclei) <= 1, "Found more than one result for query."
 
