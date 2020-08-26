@@ -190,7 +190,7 @@ class FunctionRectification:
 
     def _calc_theta(self):
         self.theta_rng = np.linspace(0, 2 * np.pi, num=self.n_theta)
-        points = np.array([[*self._model.f(theta), 0] for theta in self.theta_rng])
+        points = np.array([[c, r, 0] for c, r in zip(*self._model._poly.exterior.xy)])
         spline = pv.Spline(points, self.n_theta).compute_arc_length()
         self.arc_dl = max(np.diff(spline.get_array("arc_length")))
 
@@ -226,11 +226,11 @@ class FunctionRectification:
                 x1 = np.linspace(p0[:2], p1[:2], num=self.n_dl)
                 out[k_dl:k_dl + self.n_dl] = x1
                 k_dl += self.n_dl
-            # print(out)
+
             return out
 
         self._calc()
-        return warp(image, rect_fn, output_shape=(self.out_rows, self.out_cols))  # , order=2)
+        return warp(image, rect_fn, output_shape=(self.out_rows, self.out_cols), preserve_range=True)
 
 
 class TestFunctionRectification(FunctionRectification):

@@ -1,15 +1,15 @@
 import logging
 import os
 import warnings
+from itertools import cycle
+
 import enlighten
 
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import ImageGrid
+import seaborn as sns
 import skimage.exposure as exposure
-import imageio
 
 from filters import nucleus
 from gui._ring_label import RingImageQLabel
@@ -38,10 +38,31 @@ def ensure_dir(file_path):
     return file_path
 
 
+def image(**kwargs):
+    extent = (0, 16, -1, 1)
+    ax = plt.gca()
+    data = kwargs.pop("data")
+    me = kwargs.pop("measurements")
+    folder = kwargs.pop("folder")
+    fname = kwargs.pop("filename")
+
+    nid, ch, zst = data[['id', 'ch', 'z']].astype(int).values[0]
+    poly = data["value"].iloc[0]
+    spl = SplineApproximation(poly, fname)
+    rect = FunctionRectification(spl)
+
+    me.zstack = zst
+    me.rngChannel = ch
+    img_rect = exposure.rescale_intensity(rect.rectify(me.rngimage))
+    ax.imshow(img_rect, cmap='gray', interpolation="nearest", extent=extent)
+    ax.set_axis_off()
+
+    # channel = "dna" if ch == 0 else "tub" if ch == 1 else "act" if ch == 2 else "nan"
+    # imageio.imwrite(os.path.join(folder, f"nuc_{nid}_{channel}_rectified.png"), img_rect)
+
+
 def rectify(path):
     manager = enlighten.get_manager()
-    # extent = (0, 2 * np.pi, -1, 1)
-    extent = (0, 16, -1, 1)
 
     for root, directories, filenames in os.walk(os.path.join(path)):
         bar = manager.counter(total=len(filenames), desc='Progress', unit='files')
@@ -65,46 +86,23 @@ def rectify(path):
                           nucleus_col='value',
                           radius_min=5 * me.pix_per_um,
                           radius_max=13.5 * me.pix_per_um)
+                nuclei = nuclei.copy().assign(ch=0) \
+                    .append(nuclei.copy().assign(ch=1), ignore_index=True) \
+                    .append(nuclei.copy().assign(ch=2), ignore_index=True)
 
-                fig = plt.figure(1, size_A4, dpi=300)
                 for zst, zdf in nuclei.groupby(["z"]):
                     zst = int(zst)
+                    logger.debug(f"Processing zstack={zst}.")
                     folder = ensure_dir(os.path.join(sub_path, f"z_{zst}"))
-                    fig.clf()
-                    grid = ImageGrid(fig, 111,  # similar to subplot(111)
-                                     nrows_ncols=(len(nuclei), 3),
-                                     share_all=True,
-                                     aspect=False,
-                                     axes_pad=0.05,  # pad between axes in inch.
-                                     )
-                    for g in grid:
-                        g.set_aspect(0.01, adjustable='box')
-                        g.set_axis_off()
-
-                    it_grid = iter(grid)
-                    for nid, df in nuclei.groupby(["id"]):
-                        nid = int(nid)
-                        logger.debug(f"Processing nucleus={nid} in zstack={zst}.")
-                        poly = me.nucleus(nid)["value"].iloc[0]
-                        spl = SplineApproximation(poly, fname)
-                        rect = FunctionRectification(spl)
-
-                        me.zstack = zst
-                        dna_rect = exposure.rescale_intensity(rect.rectify(me.dnaimage))
-                        imageio.imwrite(os.path.join(folder, f"nuc_{nid}_dna_rectified.png"), dna_rect)
-
-                        me.rngChannel = 1
-                        tub_rect = exposure.rescale_intensity(rect.rectify(me.rngimage))
-                        imageio.imwrite(os.path.join(folder, f"nuc_{nid}_tub_rectified.png"), tub_rect)
-
-                        me.rngChannel = 2
-                        act_rect = exposure.rescale_intensity(rect.rectify(me.rngimage))
-                        imageio.imwrite(os.path.join(folder, f"nuc_{nid}_act_rectified.png"), act_rect)
-
-                        next(it_grid).imshow(dna_rect, cmap='gray', interpolation="nearest", extent=extent)
-                        next(it_grid).imshow(act_rect, cmap='gray', interpolation="nearest", extent=extent)
-                        next(it_grid).imshow(tub_rect, cmap='gray', interpolation="nearest", extent=extent)
-                    fig.savefig(os.path.join(folder, f"rectification_summary.pdf"))
+                    g = sns.FacetGrid(data=zdf,
+                                      row='id', col='ch', col_order=[0, 2, 1],
+                                      height=0.9, aspect=2,
+                                      despine=True, margin_titles=True,
+                                      gridspec_kws={"wspace": 0.1}
+                                      )
+                    g.map_dataframe(image, measurements=me, folder=folder, filename=fname)
+                    g.fig.suptitle('\r\n    '.join(p.parts[-2:]))
+                    g.savefig(os.path.join(folder, f"rectification_summary.pdf"))
             bar.update()
     manager.stop()
 
