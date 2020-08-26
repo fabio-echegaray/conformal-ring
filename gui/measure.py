@@ -1,7 +1,6 @@
 import itertools
 import logging
 
-import enlighten
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -11,12 +10,13 @@ from shapely.geometry.point import Point
 from gui._image_loading import find_image, qpixmap_from, retrieve_image
 import measurements as m
 
-logger = logging.getLogger('gui.measure')
-
 
 class FileImageMixin(object):
+    log = logging.getLogger('FileImageMixin')
+
     def __init__(self):
         self._file = None
+        self._meta = None
         self._zstack = 0
 
         self.images = None
@@ -33,12 +33,17 @@ class FileImageMixin(object):
     @file.setter
     def file(self, value: str):
         if value is not None:
-            logger.info('Loading %s' % value)
+            self.log.info('Loading %s' % value)
             self._file = value
-            self.images, self.pix_per_um, _, self.nFrames, self.nChannels = find_image(value)
-            self.um_per_pix = 1 / self.pix_per_um
+            im = find_image(value)
+            self._meta = im
+            self.images = im.image
+            self.pix_per_um = im.pix_per_um
+            self.um_per_pix = im.um_per_pix
+            self.nFrames = im.frames
+            self.nChannels = im.channels
             self.nZstack = int(len(self.images) / self.nFrames / self.nChannels)
-            logger.info("Pixels per um: %0.4f" % self.pix_per_um)
+            self.log.info(f"Pixels per um: {self.pix_per_um:0.4f}, {im.image.dtype}")
 
     @property
     def zstack(self):
@@ -62,12 +67,13 @@ class FileImageMixin(object):
 
 # noinspection PyPep8Naming
 class Measure(FileImageMixin):
+    log = logging.getLogger('Measure')
     _nlin = 20
     _colors = sns.husl_palette(_nlin, h=.5).as_hex()
     dl = 0.05
 
     def __init__(self):
-        super(FileImageMixin, self).__init__()
+        super(Measure, self).__init__()
         self._dnaChannel = 0
         self._rngChannel = 0
 
@@ -147,12 +153,12 @@ class Measure(FileImageMixin):
 
         lbl, boundaries = m.nuclei_segmentation(self.dnaimage, simp_px=self.pix_per_um / 2)
         boundaries = m.exclude_contained(boundaries)
-        logger.debug(f"Processing z-stack {self.zstack} with {len(boundaries)} nuclei.")
+        self.log.debug(f"Processing z-stack {self.zstack} with {len(boundaries)} nuclei.")
 
         for nucleus in boundaries:
             nucbnd = nucleus["boundary"]
             _x, _y = np.array(nucbnd.centroid.coords).astype(np.int16)[0]
-            # logger.debug(f"({_x},{_y})")
+            # self.log.debug(f"({_x},{_y})")
 
             self.measurements = self.measurements.append(
                 {
@@ -175,7 +181,7 @@ class Measure(FileImageMixin):
                                     ]
         nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
         _x, _y = np.array(nucbnd.centroid.coords).astype(np.int16)[0]
-        logger.debug(f"({_x},{_y})")
+        self.log.debug(f"({_x},{_y})")
 
         lines = m.measure_lines_around_polygon(self.rngimage, nucbnd, rng_thick=4, dl=self.dl,
                                                n_lines=self._nlin, pix_per_um=self.pix_per_um)
@@ -206,7 +212,7 @@ class Measure(FileImageMixin):
         elif len(args) == 2 and np.all([np.issubdtype(type(a), np.integer) for a in args]):
             x, y = args[0], args[1]
 
-            logger.info(f"Searching nucleus at ({x},{y})")
+            self.log.info(f"Searching nucleus at ({x},{y})")
             pt = Point(x, y)
             # search for nuclear boundary of interest
             if self.measurements.empty or len(self.measurements[(self.measurements['z'] == self.zstack)]) == 0:
@@ -214,7 +220,7 @@ class Measure(FileImageMixin):
             nuclei = self.measurements[
                 (self.measurements['type'] == 'nucleus') & (self.measurements['z'] == self.zstack)]
             nuclei = nuclei[nuclei.apply(lambda row: shapely.wkt.loads(row['value']).contains(pt), axis=1)]
-            logger.debug(f"{len(nuclei)} nuclei found.")
+            self.log.debug(f"{len(nuclei)} nuclei found.")
             assert len(nuclei) <= 1, "Found more than one result for query."
 
             if nuclei.empty:

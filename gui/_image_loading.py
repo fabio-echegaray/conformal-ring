@@ -1,27 +1,43 @@
 import logging
 import os
 import xml.etree.ElementTree
+from collections import namedtuple
 
 import numpy as np
-import skimage.external.tifffile as tf
+import tifffile as tf
 from czifile import CziFile
 from PyQt5.QtGui import QImage, QPixmap
 
 logger = logging.getLogger(__name__)
 
+MetadataImage = namedtuple('MetadataImage', ['image', 'pix_per_um', 'um_per_pix',
+                                             'time_interval', 'frames', 'channels',
+                                             'width', 'height', 'series'])
 
-def load_tiff(path):
-    _, img_name = os.path.split(path)
-    with tf.TiffFile(path) as tif:
+
+def load_tiff(file_or_path):
+    if type(file_or_path) == str:
+        _, img_name = os.path.split(file_or_path)
+    if issubclass(type(file_or_path), io.BufferedIOBase):
+        _, img_name = os.path.split(file_or_path.name)
+
+    res = None
+    with tf.TiffFile(file_or_path) as tif:
+        assert len(tif.series) == 1, "Not currently handled."
+        idx = tif.series[0].axes
+        width = tif.series[0].shape[idx.find('X')]
+        height = tif.series[0].shape[idx.find('Y')]
+
         if tif.is_imagej is not None:
-            metadata = tif.pages[0].imagej_tags
+            metadata = tif.imagej_metadata
             dt = metadata['finterval'] if 'finterval' in metadata else 1
 
             # asuming square pixels
-            xr = tif.pages[0].tags['x_resolution'].value
-            res = float(xr[0]) / float(xr[1])  # pixels per um
-            if metadata['unit'] == 'centimeter':
-                res = res / 1e4
+            if 'XResolution' in tif.pages[0].tags:
+                xr = tif.pages[0].tags['XResolution'].value
+                res = float(xr[0]) / float(xr[1])  # pixels per um
+                if metadata['unit'] == 'centimeter':
+                    res = res / 1e4
 
             images = None
             if len(tif.pages) == 1:
@@ -35,7 +51,10 @@ def load_tiff(path):
                 for i, page in enumerate(tif.pages):
                     images.append(page.asarray())
 
-            return images, res, dt, metadata['frames'], metadata['channels'] if 'channels' in metadata else 1
+            return MetadataImage(image=np.asarray(images), pix_per_um=res, um_per_pix=1. / res, time_interval=dt,
+                                 frames=metadata['frames'] if 'frames' in metadata else 1,
+                                 channels=metadata['channels'] if 'channels' in metadata else 1,
+                                 width=width, height=height, series=tif.series[0])
 
 
 def load_zeiss(path):
@@ -59,17 +78,16 @@ def load_zeiss(path):
         ax_dct = {n: k for k, n in enumerate(czi.axes)}
         n_frames = czi.shape[ax_dct['T']]
         n_channels = czi.shape[ax_dct['C']]
-        n_zstacks = czi.shape[ax_dct['Z']]
-        n_x = czi.shape[ax_dct['X']]
-        n_y = czi.shape[ax_dct['Y']]
+        n_X = czi.shape[ax_dct['X']]
+        n_Y = czi.shape[ax_dct['Y']]
 
         images = list()
         for sb in czi.subblock_directory:
-            images.append(sb.data_segment().data().reshape((n_x, n_y)))
+            images.append(sb.data_segment().data().reshape((n_X, n_Y)))
 
-        logger.info(
-            f"Loaded {czi._fh.name}. WxH({n_x},{n_y}), channels: {n_channels}, frames: {n_frames}, stacks: {n_zstacks}")
-        return np.array(images), 1 / res, dt, n_frames, n_channels  # , n_zstacks
+        return MetadataImage(image=np.array(images), pix_per_um=1. / res, um_per_pix=res, time_interval=dt,
+                             frames=n_frames, channels=n_channels,
+                             width=n_X, height=n_Y, series=None)
 
 
 def find_image(img_name, folder=None):
@@ -90,7 +108,15 @@ def retrieve_image(image_arr, frame=0, zstack=0, channel=0, number_of_channels=1
     if image_arr is not None:
         ix = frame * (number_of_channels * number_of_zstacks) + zstack * number_of_channels + channel
         logger.debug("Retrieving frame %d of channel %d at z-stack=%d (index=%d)" % (frame, channel, zstack, ix))
-        return image_arr[ix]
+
+        # normalize and convert image to unsigned 8 bit
+        data = image_arr[ix]
+        info = np.iinfo(data.dtype)  # Get the information of the incoming image type
+        data = data.astype(np.float64) / info.max  # normalize the data to 0 - 1
+        data = 255 * data  # Now scale by 255
+        img = data.astype(np.uint8)
+
+        return img
 
 
 def image_iterator(image_arr, channel=0, number_of_frames=1):
