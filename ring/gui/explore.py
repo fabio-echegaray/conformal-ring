@@ -13,6 +13,7 @@ from matplotlib.figure import SubplotParams
 
 try:
     from PIL.ImageQt import ImageQt
+    # FIXME: why PyQt4?
     from PyQt4 import QtCore, uic
     from PyQt4.QtCore import *
     from PyQt4.QtCore import QThread

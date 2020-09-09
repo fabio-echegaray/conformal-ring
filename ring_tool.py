@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 from PyQt5 import QtWidgets
 
-from gui.ring import RingWindow
+from ring.gui.ring import RingWindow
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('ring').setLevel(logging.INFO)

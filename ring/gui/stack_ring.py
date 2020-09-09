@@ -8,10 +8,9 @@ from PyQt5.QtCore import QRect, QTimer
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
 from PyQt5.QtWidgets import QLabel, QWidget
 from shapely import affinity
-import shapely.wkt
 
-from gui._widget_graph import GraphWidget
-from gui.measure import Measure
+from ring.gui._widget_graph import GraphWidget
+from ring.measure import Measure
 
 
 # noinspection PyPep8Naming
