@@ -7,7 +7,7 @@ import seaborn as sns
 from shapely.geometry.point import Point
 
 from gui._image_loading import find_image, qpixmap_from, retrieve_image
-import measurements as m
+from ring import measurements as m, plots as p
 
 
 class FileImageMixin(object):
@@ -277,7 +277,6 @@ class Measure(FileImageMixin):
 
     def drawMeasurements(self, ax):
         from shapely import affinity
-        import plots as p
 
         img = self.rngimage
         ext = (0, self.dwidth / self.pix_per_um, 0, self.dheight / self.pix_per_um)

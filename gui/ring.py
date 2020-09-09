@@ -7,15 +7,15 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.ticker as ticker
 from matplotlib.ticker import EngFormatter
-from PyQt5 import QtCore, QtGui, uic
+from PyQt5 import QtCore, uic
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QFileDialog, QMainWindow, QStatusBar, QWidget)
 
 from gui._ring_label import RingImageQLabel
 from gui._widget_graph import GraphWidget
 from gui.stack_ring import StkRingWidget
-from rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
-import measurements as m
+from ring.rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
+from ring import measurements as m
 
 
 # noinspection PyPep8Naming

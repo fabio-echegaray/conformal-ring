@@ -7,9 +7,8 @@ from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QFont
 from PyQt5.QtWidgets import QLabel
 from skimage import draw
 
-from gui._image_loading import retrieve_image
-from gui.measure import Measure
-from filters import nucleus
+from ring.measure import Measure
+from ring.filters import nucleus
 
 
 def distance(a, b):

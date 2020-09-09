@@ -11,8 +11,6 @@ from matplotlib.ticker import EngFormatter
 from shapely.geometry.polygon import Polygon
 from matplotlib.figure import SubplotParams
 
-import plots as p
-
 try:
     from PIL.ImageQt import ImageQt
     from PyQt4 import QtCore, uic
@@ -30,7 +28,7 @@ except ImportError:  # if calling from batch and system doesn't have GUI capabil
 
 from . import utils
 from . import convert_to, meter, pix, um
-import measurements as m
+from ring import measurements as m, plots as p
 
 sp = SubplotParams(left=0., bottom=0., right=1., top=1.)
 mydpi = 72

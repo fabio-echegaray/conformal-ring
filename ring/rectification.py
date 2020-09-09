@@ -10,9 +10,9 @@ from scipy.interpolate import UnivariateSpline
 
 import matplotlib.pyplot as plt
 
-import plots as p
+from ring import plots as p
 from gui._image_loading import retrieve_image
-from gui.measure import FileImageMixin
+from ring.measure import FileImageMixin
 
 
 def timeit(method):
@@ -365,9 +365,9 @@ class TestSplineApproximation(SplineApproximation):
         t = np.linspace(0, 2 * np.pi, num=len(self._poly.exterior.xy[0]))
         plot_fit(self._poly, self.f, t, title='Spline Approximation')
 
-    def plot_grid(self, dna_ch=0, act_ch=2, width_dl=1, n_dl=5, n_theta=10):
-        fig = plt.figure()
-        ax = fig.gca()
+    def grid(self, dna_ch=0, act_ch=2, width_dl=1, n_dl=5, n_theta=10, ax=None):
+        if ax is None:
+            ax = plt.gca()
 
         c = self._poly.centroid
         xdata, ydata = self._poly.exterior.xy
@@ -438,6 +438,8 @@ class TestSplineApproximation(SplineApproximation):
             p0 = p2
             p1 = p3
 
+    def plot_grid(self, dna_ch=0, act_ch=2, width_dl=1, n_dl=5, n_theta=10, ax=None):
+        self.grid(dna_ch=dna_ch, act_ch=act_ch, width_dl=width_dl, n_dl=n_dl, n_theta=n_theta, ax=ax)
         plt.show(block=False)
 
         # p = pv.Plotter()
@@ -450,7 +452,7 @@ class TestSplineApproximation(SplineApproximation):
 
 def plot_fit(polygon: Polygon, fit_fn, t, title=""):
     import matplotlib.pyplot as plt
-    import plots as p
+    import ring.plots as p
 
     xdata, ydata = polygon.exterior.xy
     pts = np.array([fit_fn(_t) for _t in t])
