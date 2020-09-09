@@ -5,16 +5,18 @@ import logging
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.ticker import EngFormatter
 from PyQt5 import QtCore, uic
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QFileDialog, QMainWindow, QStatusBar, QWidget)
 
-from gui._ring_label import RingImageQLabel
-from gui._widget_graph import GraphWidget
-from gui.stack_ring import StkRingWidget
-from ring.rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
+from ring.gui._ring_label import RingImageQLabel
+from ring.gui._widget_graph import GraphWidget
+from ring.gui import StkRingWidget
+from ring.plots.rectification import PlotSplineApproximation
+from ring.rectification import TestPiecewiseLinearRectification, TestFunctionRectification
 from ring import measurements as m
 
 
@@ -217,22 +219,26 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onNucleusPickedFromImage(self):
-        self.log.debug('onNucleusPickedFromImage')
+        self.log.debug('onNucleusPickedFromImage\r\n'
+                       f'    current image={self.image.file}\r\n'
+                       f'    current nucleus={self.image.currNucleusId}')
         self.stk.dnaChannel = self.image.dnaChannel
         self.stk.rngChannel = self.image.rngChannel
         self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
         self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
 
         # test rectification code
-        tsplaprx = TestSplineApproximation(self.image.currNucleus, self.image)
-        tsplaprx.test_fit()
-        tsplaprx.plot_grid()
+        tsplaprx = PlotSplineApproximation(self.image.currNucleus, self.image)
+        tsplaprx.fit_xy(ax=plt.figure(10).gca())
+        tsplaprx.fit_polygon(ax=plt.figure(11).gca())
+        tsplaprx.grid(ax=plt.figure(12).gca())
 
         trct = TestPiecewiseLinearRectification(tsplaprx, dl=4, n_dl=10, n_theta=100, pix_per_dl=1, pix_per_theta=1)
         trct.plot_rectification()
 
         tfnrect = TestFunctionRectification(tsplaprx, pix_per_dl=1, pix_per_arclen=1)
         tfnrect.plot_rectification()
+        plt.show(block=False)
 
         minx, miny, maxx, maxy = self.image.currNucleus.bounds
         r = int(max(maxx - minx, maxy - miny) / 2)
