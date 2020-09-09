@@ -6,7 +6,7 @@ import pandas as pd
 import seaborn as sns
 from shapely.geometry.point import Point
 
-from ring.gui._image_loading import find_image, qpixmap_from, retrieve_image
+from ring.gui import find_image, qpixmap_from, retrieve_image
 from ring import measurements as m, plots as p
 
 

@@ -5,7 +5,6 @@ import numpy as np
 import pyvista as pv
 from shapely.geometry import Polygon
 from skimage.transform import PiecewiseAffineTransform, warp
-from symfit import Eq, Fit, cos, parameters, pi, sin, variables
 from scipy.interpolate import UnivariateSpline
 
 import matplotlib.pyplot as plt
@@ -40,7 +39,7 @@ class BaseApproximation(FileImageMixin):
     log = logging.getLogger('BaseApproximation')
 
     def __init__(self, polygon: Polygon, image):
-        super(FileImageMixin, self).__init__()
+        super(BaseApproximation, self).__init__()
         self._load_image(image)
         self._poly = polygon
 
@@ -79,6 +78,8 @@ class BaseApproximation(FileImageMixin):
 
 @timeit
 def harmonic_approximation(polygon: Polygon, n=3):
+    from symfit import Eq, Fit, cos, parameters, pi, sin, variables
+
     def fourier_series(x, f, n=0):
         """
         Returns a symbolic fourier series of order `n`.

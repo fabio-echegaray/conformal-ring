@@ -16,6 +16,12 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/fabio-echegaray/ring",
     packages=setuptools.find_packages(),
+    install_requires=[
+        'pandas>=1.0',
+        'matplotlib>=3.0',
+        'Shapely>=1.6',
+        'pyvista>=0.25.3'
+        ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: AGPL-3.0",

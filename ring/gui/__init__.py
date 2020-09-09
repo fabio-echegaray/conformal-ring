@@ -1,5 +1,7 @@
 from sympy.physics.units import *
 from sympy import S
+from .stack_ring import StkRingWidget
+from ._image_loading import *
 
 One = S.One
 
