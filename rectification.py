@@ -191,7 +191,7 @@ class FunctionRectification:
     def _calc_theta(self):
         self.theta_rng = np.linspace(0, 2 * np.pi, num=self.n_theta)
         points = np.array([[c, r, 0] for c, r in zip(*self._model._poly.exterior.xy)])
-        spline = pv.Spline(points, self.n_theta).compute_arc_length()
+        spline = pv.Spline(points, self.n_theta)  # FIXME: Move to SplineApproximation as here is not intuitive.
         self.arc_dl = max(np.diff(spline.get_array("arc_length")))
 
         self.spline = spline
