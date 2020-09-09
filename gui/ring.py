@@ -17,19 +17,14 @@ from gui.stack_ring import StkRingWidget
 from rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
 import measurements as m
 
-logger = logging.getLogger('ring.gui')
-
-pd.set_option('display.width', 320)
-pd.set_option('display.max_columns', 20)
-pd.set_option('display.max_rows', 100)
-
 
 # noinspection PyPep8Naming
 class RingWindow(QMainWindow):
+    log = logging.getLogger('gui.RingWindow')
     image: RingImageQLabel
     statusbar: QStatusBar
 
-    def __init__(self):
+    def __init__(self, dna_ch=None, sig_ch=None):
         super(RingWindow, self).__init__()
         path = os.path.join(sys.path[0], __package__)
 
@@ -53,8 +48,6 @@ class RingWindow(QMainWindow):
         self.image.lineUpdated.connect(self.onImgUpdate)
         self.image.linePicked.connect(self.onLinePickedFromImage)
         self.image.nucleusPicked.connect(self.onNucleusPickedFromImage)
-        self.image.dnaChannel = self.ctrl.dnaSpin.value()
-        self.image.rngChannel = self.ctrl.actSpin.value()
 
         self.grph = GraphWidget()
         self.grphtimer = QTimer()
@@ -66,8 +59,10 @@ class RingWindow(QMainWindow):
         # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
         self.grphtimer.timeout.connect(self._graph)
 
-        self.image.dnaChannel = self.ctrl.dnaSpin.value()
-        self.image.rngChannel = self.ctrl.actSpin.value()
+        if dna_ch is not None:
+            self.ctrl.dnaSpin.setValue(int(dna_ch))
+        if sig_ch is not None:
+            self.ctrl.actSpin.setValue(int(sig_ch))
 
         self.measure_n = 0
         self.selectedLine = None
@@ -112,7 +107,7 @@ class RingWindow(QMainWindow):
         self.stk.close()
 
     def focusInEvent(self, QFocusEvent):
-        logger.debug('focusInEvent')
+        self.log.debug('focusInEvent')
         self.ctrl.activateWindow()
         self.grph.activateWindow()
         self.stk.focusInEvent(None)
@@ -122,6 +117,7 @@ class RingWindow(QMainWindow):
 
     def _saveCurrentFileMeasurements(self):
         if not self.df.empty:
+            self.log.info("Saving measurements.")
             fname = os.path.basename(self.image.file)
             df = self.df[self.df["file"] == fname]
             df.loc[:, "condition"] = self.ctrl.experimentLineEdit.text()
@@ -155,7 +151,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onImgToggle(self):
-        logger.debug('onImgToggle')
+        self.log.debug('onImgToggle')
         if self.ctrl.dnaChk.isChecked():
             self.image.activeCh = "dna"
         if self.ctrl.actChk.isChecked():
@@ -163,13 +159,13 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onRenderChk(self):
-        logger.debug('onRenderChk')
+        self.log.debug('onRenderChk')
         self.image.renderMeasurements = self.ctrl.renderChk.isChecked()
         self.stk.renderMeasurements = self.ctrl.renderChk.isChecked()
 
     @QtCore.pyqtSlot()
     def onOpenButton(self):
-        logger.debug('onOpenButton')
+        self.log.debug('onOpenButton')
 
         # save current file measurements as a backup
         self._saveCurrentFileMeasurements()
@@ -212,37 +208,30 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onImgUpdate(self):
-        # logger.debug(f"onImgUpdate")
+        # self.log.debug(f"onImgUpdate")
         self.ctrl.renderChk.setChecked(True)
         self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-        logger.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
+        self.log.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
         self.stk.drawMeasurements(erase_bkg=True)
         self.grphtimer.start(1000)
 
     @QtCore.pyqtSlot()
     def onNucleusPickedFromImage(self):
-        logger.debug('onNucleusPickedFromImage')
+        self.log.debug('onNucleusPickedFromImage')
         self.stk.dnaChannel = self.image.dnaChannel
         self.stk.rngChannel = self.image.rngChannel
         self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
         self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
 
         # test rectification code
-        dl = 4
-        ndl = 10
-        nth = 100
-        ppdl = 1
-        ppth = 1
-
         tsplaprx = TestSplineApproximation(self.image.currNucleus, self.image)
         tsplaprx.test_fit()
         tsplaprx.plot_grid()
 
-        trct = TestPiecewiseLinearRectification(tsplaprx,
-                                                dl=dl, n_dl=ndl, n_theta=nth, pix_per_dl=ppdl, pix_per_theta=ppth)
+        trct = TestPiecewiseLinearRectification(tsplaprx, dl=4, n_dl=10, n_theta=100, pix_per_dl=1, pix_per_theta=1)
         trct.plot_rectification()
 
-        tfnrect = TestFunctionRectification(tsplaprx, dl=dl, n_dl=ndl, n_theta=nth, pix_per_dl=ppdl, pix_per_theta=ppth)
+        tfnrect = TestFunctionRectification(tsplaprx, pix_per_dl=1, pix_per_arclen=1)
         tfnrect.plot_rectification()
 
         minx, miny, maxx, maxy = self.image.currNucleus.bounds
@@ -254,21 +243,25 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onMeasureButton(self):
-        logger.debug('onMeasureButton')
+        self.log.debug('onMeasureButton')
         self.image.paint_measures()
         self._graph(alpha=0.2)
         self._graphTendency()
 
     @QtCore.pyqtSlot()
     def onZValueChange(self):
-        logger.debug('onZValueChange')
+        self.log.debug('onZValueChange')
         self.image.zstack = self.ctrl.zSpin.value() % self.image.nZstack
         self.ctrl.zSpin.setValue(self.image.zstack)
         self._graph()
 
     @QtCore.pyqtSlot()
     def onDnaValChange(self):
-        logger.debug('onDnaValChange')
+        self.log.debug('onDnaValChange')
+        if not self.image.nChannels > 0:
+            self.log.warning('Not a valid number of channels (image not loaded?).')
+            return
+
         val = self.ctrl.dnaSpin.value() % self.image.nChannels
         self.ctrl.dnaSpin.setValue(val)
         self.image.dnaChannel = val
@@ -278,7 +271,11 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onActValChange(self):
-        logger.debug('onActValChange')
+        self.log.debug('onActValChange')
+        if not self.image.nChannels > 0:
+            self.log.warning('Not a valid number of channels (image not loaded?).')
+            return
+
         val = self.ctrl.actSpin.value() % self.image.nChannels
         self.ctrl.actSpin.setValue(val)
         self.image.rngChannel = val
@@ -288,7 +285,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onAddButton(self):
-        logger.debug('onAddButton')
+        self.log.debug('onAddButton')
         if self.currMeasurement is not None and self.currN is not None and self.currZ is not None:
             new = pd.DataFrame(self.currMeasurement)
             new = new.loc[(new["n"] == self.currN) & (new["z"] == self.currZ)]
@@ -305,7 +302,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onPlotButton(self):
-        logger.debug('onPlotButton')
+        self.log.debug('onPlotButton')
         if self.image.measurements is None: return
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -339,7 +336,7 @@ class RingWindow(QMainWindow):
 
     @QtCore.pyqtSlot()
     def onLinePickedFromGraph(self):
-        logger.debug('onLinePickedFromGraph')
+        self.log.debug('onLinePickedFromGraph')
         self.selectedLine = self.grph.selectedLine if self.grph.selectedLine is not None else None
         if self.selectedLine is not None:
             self.image.selectedLine = self.selectedLine
@@ -354,13 +351,13 @@ class RingWindow(QMainWindow):
             try:
                 self.stk.drawMeasurements(erase_bkg=True)
             except Exception as e:
-                logger.error(e)
+                self.log.error(e)
 
             self.statusbar.showMessage("line %d selected" % self.selectedLine)
 
     @QtCore.pyqtSlot()
     def onLinePickedFromStackGraph(self):
-        logger.debug('onLinePickedFromStackGraph')
+        self.log.debug('onLinePickedFromStackGraph')
         self.selectedLine = self.stk.selectedLineId if self.stk.selectedLineId is not None else None
         if self.selectedLine is not None:
             self.currN = self.stk.selectedLineId
@@ -369,11 +366,11 @@ class RingWindow(QMainWindow):
             self.currZ = self.stk.selectedZ
 
             self.statusbar.showMessage(f"Line {self.currN} of z-stack {self.currZ} selected.")
-            logger.info(f"Line {self.currN} of z-stack {self.currZ} selected.")
+            self.log.info(f"Line {self.currN} of z-stack {self.currZ} selected.")
 
     @QtCore.pyqtSlot()
     def onLinePickedFromImage(self):
-        logger.debug('onLinePickedFromImage')
+        self.log.debug('onLinePickedFromImage')
         self.selectedLine = self.image.selectedLine if self.image.selectedLine is not None else None
         if self.selectedLine is not None:
             self.currN = self.selectedLine
@@ -383,23 +380,3 @@ class RingWindow(QMainWindow):
             self.stk.selectedZ = self.currZ
 
             self.statusbar.showMessage("Line %d selected" % self.selectedLine)
-
-
-if __name__ == '__main__':
-    from PyQt5.QtCore import QT_VERSION_STR
-    from PyQt5.Qt import PYQT_VERSION_STR
-
-    base_path = os.path.abspath('%s' % os.getcwd())
-    logging.getLogger('matplotlib').setLevel(logging.ERROR)
-    logging.info('Qt version:' + QT_VERSION_STR)
-    logging.info('PyQt version:' + PYQT_VERSION_STR)
-    logging.info('Working dir:' + os.getcwd())
-    logging.info('Base dir:' + base_path)
-    os.chdir(base_path)
-
-    app = QtGui.QApplication(sys.argv)
-
-    gui = RingWindow()
-    gui.show()
-
-    sys.exit(app.exec_())

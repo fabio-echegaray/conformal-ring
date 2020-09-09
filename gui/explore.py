@@ -32,13 +32,15 @@ from . import utils
 from . import convert_to, meter, pix, um
 import measurements as m
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger('hhlab')
 sp = SubplotParams(left=0., bottom=0., right=1., top=1.)
 mydpi = 72
 
 
+# noinspection PyPep8Naming
+# TODO: Fix documentation.
 class RenderImagesThread(QThread):
+    log = logging.getLogger('gui.RenderImagesThread')
+
     def __init__(self, hoechst, edu, pericentrin, tubulin,
                  largeQLabel, smallQLabel, pix_per_um=1):
         """
@@ -60,7 +62,7 @@ class RenderImagesThread(QThread):
         self.centrosomes = None
         self.lqlbl = largeQLabel
         self.sqlbl = smallQLabel
-        if pix_per_um == 1: logger.warning('no image resolution was set.')
+        if pix_per_um == 1: self.log.warning('no image resolution was set.')
         self.pix_per_um = pix_per_um
         self._rendered = False
 
@@ -149,6 +151,8 @@ class RenderImagesThread(QThread):
 
 if LOAD_GUI:
     class ExplorationGui(QWidget):
+        log = logging.getLogger('ExplorationGui')
+
         def __init__(self):
             self.hoechst = None
             self.edu = None
@@ -175,13 +179,13 @@ if LOAD_GUI:
             if self.hoechst is None or self.edu is None or self.pericentrin is None or self.tubulin is None:
                 raise Exception('empty images on some channels.')
 
-            logger.info('applying nuclei algorithm')
+            self.log.info('applying nuclei algorithm')
             r = 6  # [um]
             imgseg = m.nuclei_segmentation(self.hoechst, radius=r * self.pix_per_um)
             n_nuclei = len(np.unique(imgseg))
 
             if n_nuclei > 1:
-                logger.info('found no nuclear features on the hoechst image.')
+                self.log.info('found no nuclear features on the hoechst image.')
                 return
 
             # self.nuclei_features = m.nuclei_features(imgseg, area_thresh=(r * self.resolution) ** 2 * np.pi)
@@ -189,7 +193,7 @@ if LOAD_GUI:
             for i, n in enumerate(self.nuclei):
                 n['id'] = i
 
-            logger.info('applying cell boundary algorithm')
+            self.log.info('applying cell boundary algorithm')
             self.cells, _ = m.cell_boundary(self.tubulin, self.hoechst)
 
             self.samples, self.df = m.measure_into_dataframe(self.hoechst, self.pericentrin, self.edu, self.tubulin,
@@ -203,8 +207,8 @@ if LOAD_GUI:
             self.render_cell()
 
         def render_cell(self):
-            logger.info('render_cell')
-            logger.debug('self.current_sample_id: %d' % self.current_sample_id)
+            self.log.info('render_cell')
+            self.log.debug('self.current_sample_id: %d' % self.current_sample_id)
             if len(self.samples) == 0:
                 raise Exception('no samples to show!')
 
@@ -214,7 +218,7 @@ if LOAD_GUI:
 
             self.renderingMutex.lock()
             if self.renderingThread.isRunning():
-                logger.debug('terminating rendering thread')
+                self.log.debug('terminating rendering thread')
                 self.renderingThread.quit()
             else:
                 self.renderingThread.setIndividual(self.current_sample_id, sample)
@@ -223,7 +227,7 @@ if LOAD_GUI:
 
             c, r = nucleus.boundary.xy
             r_n, c_n = draw.polygon(r, c)
-            logger.debug('feat id: %d' % sample['id'])
+            self.log.debug('feat id: %d' % sample['id'])
 
             self.mplEduHist.hide()
             self.imgEdu.clear()
@@ -280,7 +284,7 @@ if LOAD_GUI:
         @QtCore.pyqtSlot()
         def render_images(self):
             if self.current_sample_id != self.renderingThread.id:
-                logger.info('rendering thread finished but for a different id! self %d thread %d' % (
+                self.log.info('rendering thread finished but for a different id! self %d thread %d' % (
                     self.current_sample_id, self.renderingThread.id))
 
                 self.render_cell()
@@ -347,8 +351,8 @@ if LOAD_GUI:
 
             df = self.df
             df = df.loc[:, ['dna', 'c1_d_nuc_centr', 'c1_d_nuc_bound', 'c1_d_cell_centr', 'c1_d_cell_bound']]
-            df = df.rename(columns={'c1_d_nuc_centr': 'nuclear centroid',
-                                    'c1_d_nuc_bound': 'nuclear boundary',
+            df = df.rename(columns={'c1_d_nuc_centr':  'nuclear centroid',
+                                    'c1_d_nuc_bound':  'nuclear boundary',
                                     'c1_d_cell_centr': 'cell centroid',
                                     'c1_d_cell_bound': 'cell boundary', })
             dd = pd.melt(df, id_vars=['dna'])
@@ -361,7 +365,7 @@ if LOAD_GUI:
 
         @QtCore.pyqtSlot()
         def on_prev_button(self):
-            logger.info('on_prev_button')
+            self.log.info('on_prev_button')
             # self.prevButton.setEnabled(False)
             self.current_sample_id = (self.current_sample_id - 1) % len(self.samples)
             self.render_cell()
@@ -369,7 +373,7 @@ if LOAD_GUI:
 
         @QtCore.pyqtSlot()
         def on_next_button(self):
-            logger.info('on_next_button')
+            self.log.info('on_next_button')
             # self.nextButton.setEnabled(False)
             self.current_sample_id = (self.current_sample_id + 1) % len(self.samples)
             self.render_cell()

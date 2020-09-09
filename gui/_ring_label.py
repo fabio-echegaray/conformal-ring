@@ -3,15 +3,13 @@ import logging
 
 import numpy as np
 from PyQt5 import Qt, QtCore, QtGui
-from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QFont
 from PyQt5.QtWidgets import QLabel
-import shapely.wkt
 from skimage import draw
 
 from gui._image_loading import retrieve_image
 from gui.measure import Measure
-
-logger = logging.getLogger('gui.ring.label')
+from filters import nucleus
 
 
 def distance(a, b):
@@ -25,6 +23,7 @@ def is_between(c, a, b):
 
 # noinspection PyPep8Naming
 class RingImageQLabel(QLabel, Measure):
+    log = logging.getLogger('RingImageQLabel')
     clicked = Qt.pyqtSignal()
     lineUpdated = Qt.pyqtSignal()
     linePicked = Qt.pyqtSignal()
@@ -54,7 +53,7 @@ class RingImageQLabel(QLabel, Measure):
     @property
     def currNucleus(self):
         # print(self.nucleus(self.currNucleusId))
-        return shapely.wkt.loads(self.nucleus(self.currNucleusId)["value"].iloc[0])
+        return self.nucleus(self.currNucleusId)["value"].iloc[0]
 
     @property
     def activeCh(self):
@@ -113,7 +112,7 @@ class RingImageQLabel(QLabel, Measure):
     @Measure.file.setter
     def file(self, file):
         if file is not None:
-            logger.info('Loading %s' % file)
+            self.log.info('Loading %s' % file)
             super(RingImageQLabel, type(self)).file.fset(self, file)
             self._repaint()
 
@@ -129,7 +128,7 @@ class RingImageQLabel(QLabel, Measure):
         self.update()
 
     def mouseMoveEvent(self, event):
-        # logger.debug('mouseMoveEvent')
+        # self.log.debug('mouseMoveEvent')
         if self.file is None:
             return
 
@@ -149,7 +148,7 @@ class RingImageQLabel(QLabel, Measure):
                     #     min(pts[0].y(), pts[1].y()), self.mousePos.y(), max(pts[0].y(), pts[1].y())))
                     if is_between(self.mousePos, pts[0], pts[1]):
                         if me['li'] != self.selectedLine:
-                            logger.debug(f"Mouse over line {me['li']}.")
+                            self.log.debug(f"Mouse over line {me['li']}.")
                             self.selectedLine = me['li']
                             self.lineUpdated.emit()
                             self._repaint()
@@ -163,7 +162,7 @@ class RingImageQLabel(QLabel, Measure):
         # convert to image pixel coords
         x = int(pos.x() * self.dwidth / self.width())
         y = int(pos.y() * self.dheight / self.height())
-        logger.debug(f'Clicked on (x,y)=({x},{y})')
+        self.log.debug(f'Clicked on (x,y)=({x},{y})')
 
         anyLineSelected = False
         lineChanged = False
@@ -175,7 +174,7 @@ class RingImageQLabel(QLabel, Measure):
                     if me['li'] != self.selectedLine:
                         lineChanged = True
                         self.selectedLine = me['li']
-                        logger.debug(f"Mouse click over line {me['li']}.")
+                        self.log.debug(f"Mouse click over line {me['li']}.")
                         break
 
         # check if pointer clicked inside any nuclei
@@ -184,9 +183,16 @@ class RingImageQLabel(QLabel, Measure):
             return
 
         if len(nucleus) == 1:
-            logger.debug(f"Nucleus {nucleus['id'].iloc[0]} selected by clicking.")
+            item = nucleus.iloc[0]
+            nid = int(item['id'])
+            nuc = item['value']
+            self.log.debug(f"Nucleus {nid} selected by clicking.\r\n"
+                           f"    Area={nuc.area :.2f}[pix^2]\r\n"
+                           f"        ={nuc.area / self.pix_per_um ** 2 :.2f}[um^2],\r\n"
+                           f"    equivalent radius={np.sqrt(nuc.area / np.pi):.2f}[pix]\r\n"
+                           f"                     ={np.sqrt(nuc.area / np.pi) / self.pix_per_um:.2f}[um].")
             self.lines(nucleus['id'].iloc[0])
-            nucbnd = shapely.wkt.loads(nucleus["value"].iloc[0])
+            nucbnd = nucleus["value"].iloc[0]
             self._selNuc = nucbnd
             self.currNucleusId = int(nucleus["id"].iloc[0])
             self.nucleusPicked.emit()
@@ -201,11 +207,12 @@ class RingImageQLabel(QLabel, Measure):
             self.clicked.emit()
 
     def paint_measures(self):
-        logger.debug("Painting measurements.")
+        self.log.debug("Painting measurements.")
         data = self.rngimage
 
         # map the data range to 0 - 255
-        img8bit = ((data - data.min()) / (data.ptp() / 255.0)).astype(np.uint8)
+        # img8bit = ((data - data.min()) / (data.ptp() / 255.0)).astype(np.uint8)
+        img8bit = data
 
         for me in self.measurements:
             r0, c0, r1, c1 = np.array(list(me['ls0']) + list(me['ls1'])).astype(int)
@@ -265,7 +272,7 @@ class RingImageQLabel(QLabel, Measure):
             nuc_pen.setStyle(QtCore.Qt.DotLine)
             painter.setPen(nuc_pen)
             for i, e in self.nuclei.iterrows():
-                n = shapely.wkt.loads(e["value"])
+                n = e["value"]
                 if e["id"] == self.currNucleusId:
                     brush = QBrush(QtCore.Qt.BDiagPattern)
                     brush.setColor(QColor('yellow'))
@@ -285,35 +292,13 @@ class RingImageQLabel(QLabel, Measure):
             pts = [Qt.QPoint(x, y) for x, y in [me['ls0'], me['ls1']]]
             painter.drawLine(pts[0], pts[1])
 
+        painter.setPen(QPen(QBrush(QColor('red')), 3))
+        painter.setFont(QFont("arial", 60))
+        for ix, nrow in self.nuclei.pipe(nucleus,
+                                         nucleus_col='value',
+                                         radius_min=5 * self.pix_per_um,
+                                         radius_max=13.5 * self.pix_per_um).iterrows():
+            nuc = nrow["value"]
+            painter.drawText(nuc.centroid.x, nuc.centroid.y, f"{int(nrow['id'])}")
+
         painter.end()
-
-    def drawMeasurements(self, ax, pal):
-        if self._selNuc is None: return
-        from matplotlib import cm
-        from shapely import affinity
-        import plots as p
-
-        act_img = retrieve_image(self.images, channel=self.rngChannel, number_of_channels=self.nChannels,
-                                 zstack=self.zstack, number_of_zstacks=self.nZstack, frame=0)
-
-        ext = [0, self.dwidth / self.pix_per_um, self.dheight / self.pix_per_um, 0]
-
-        ax.imshow(act_img, interpolation='none', extent=ext, cmap=cm.gray_r)
-
-        for n in [e["boundary"] for e in self._boudaries]:
-            n_um = affinity.scale(n, xfact=self.um_per_pix, yfact=self.um_per_pix, origin=(0, 0, 0))
-            p.render_polygon(n_um, zorder=10, ax=ax)
-
-        for me, c in zip(self.measurements, pal):
-            ax.plot([me['ls0'][0] / self.pix_per_um, me['ls1'][0] / self.pix_per_um],
-                    [me['ls0'][1] / self.pix_per_um, me['ls1'][1] / self.pix_per_um],
-                    linewidth=1, linestyle='-', color=c, alpha=1)
-
-        w = 20
-        c = self._selNuc.centroid
-        x0, y0 = c.x / self.pix_per_um - w, c.y / self.pix_per_um - w
-        ax.set_xlim([x0, x0 + 2 * w])
-        ax.set_ylim([y0, y0 + 2 * w])
-
-        ax.plot([x0 + 2, x0 + 12], [y0 + 2, y0 + 2], c='w', lw=4)
-        ax.text(x0 + 5, y0 + 3.5, '10 um', color='w', fontdict={'size': 7})
