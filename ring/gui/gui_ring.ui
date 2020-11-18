@@ -135,7 +135,7 @@
   <customwidget>
    <class>RingImageQLabel</class>
    <extends>QLabel</extends>
-   <header>gui/_ring_label.h</header>
+   <header>ring/gui/_ring_label.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

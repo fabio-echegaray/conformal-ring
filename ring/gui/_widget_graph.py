@@ -18,7 +18,7 @@ class GraphWidget(QWidget):
 
     def __init__(self):
         super(GraphWidget, self).__init__()
-        path = os.path.join(sys.path[0], __package__)
+        path = os.path.join(sys.path[0], *__package__.split('.'))
         uic.loadUi(os.path.join(path, 'gui_ring_graph.ui'), self)
         self.canvas.callbacks.connect('pick_event', self.on_pick)
 

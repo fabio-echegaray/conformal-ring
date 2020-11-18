@@ -28,7 +28,7 @@ class RingWindow(QMainWindow):
 
     def __init__(self, dna_ch=None, sig_ch=None):
         super(RingWindow, self).__init__()
-        path = os.path.join(sys.path[0], __package__)
+        path = os.path.join(sys.path[0], *__package__.split('.'))
 
         uic.loadUi(os.path.join(path, 'gui_ring.ui'), self)
 
