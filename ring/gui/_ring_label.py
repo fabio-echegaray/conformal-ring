@@ -7,9 +7,8 @@ from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QFont
 from PyQt5.QtWidgets import QLabel
 from skimage import draw
 
-from gui._image_loading import retrieve_image
-from gui.measure import Measure
-from filters import nucleus
+from ring.measure import Measure
+from ring.filters import nucleus
 
 
 def distance(a, b):
@@ -214,7 +213,9 @@ class RingImageQLabel(QLabel, Measure):
         # img8bit = ((data - data.min()) / (data.ptp() / 255.0)).astype(np.uint8)
         img8bit = data
 
-        for me in self.measurements:
+        for _id, me in self.measurements.iterrows():
+            if np.isnan(me['ls0']).any() or np.isnan(me['ls1']).any():
+                continue
             r0, c0, r1, c1 = np.array(list(me['ls0']) + list(me['ls1'])).astype(int)
             rr, cc = draw.line(r0, c0, r1, c1)
             img8bit[cc, rr] = 255

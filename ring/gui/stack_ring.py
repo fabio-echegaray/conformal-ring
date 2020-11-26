@@ -8,10 +8,9 @@ from PyQt5.QtCore import QRect, QTimer
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPen
 from PyQt5.QtWidgets import QLabel, QWidget
 from shapely import affinity
-import shapely.wkt
 
-from gui._widget_graph import GraphWidget
-from gui.measure import Measure
+from ring.gui._widget_graph import GraphWidget
+# from ring.measure import Measure
 
 
 # noinspection PyPep8Naming
@@ -20,7 +19,8 @@ class StkRingWidget(QWidget):
     images: List[QLabel]
     linePicked = Qt.pyqtSignal()
 
-    def __init__(self, measure: Measure, parent=None, nucleus_id=None,
+    # def __init__(self, measure: Measure, parent=None, nucleus_id=None,
+    def __init__(self, measure, parent=None, nucleus_id=None,
                  line_length=4, dl=0.05, lines_to_measure=1, **kwargs):
         super().__init__(parent, **kwargs)
         # path = os.path.join(sys.path[0], __package__)

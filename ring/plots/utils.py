@@ -133,6 +133,8 @@ def render_polygon(polygon: Polygon, zorder=0, c='red', ax=None):
     ax.add_patch(patch)
     ax.set_aspect(1.0)
 
+    return patch
+
 
 def histogram_of_every_row(counts_col, **kwargs):
     """

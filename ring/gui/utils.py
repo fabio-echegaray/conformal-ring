@@ -1,5 +1,6 @@
 from PIL import Image
 
+
 def get_crop_bbox(image, qlabel, r, c):
     maxw, maxh = image.shape
     minr = int(r - qlabel.height() / 2.0)

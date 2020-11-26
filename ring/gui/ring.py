@@ -5,17 +5,19 @@ import logging
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.ticker import EngFormatter
-from PyQt5 import QtCore, QtGui, uic
+from PyQt5 import QtCore, uic
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QFileDialog, QMainWindow, QStatusBar, QWidget)
 
-from gui._ring_label import RingImageQLabel
-from gui._widget_graph import GraphWidget
-from gui.stack_ring import StkRingWidget
-from rectification import TestSplineApproximation, TestPiecewiseLinearRectification, TestFunctionRectification
-import measurements as m
+from ring.gui._ring_label import RingImageQLabel
+from ring.gui._widget_graph import GraphWidget
+from ring.gui import StkRingWidget
+from ring.plots.rectification import PlotSplineApproximation
+from ring.rectification import TestPiecewiseLinearRectification, TestFunctionRectification
+from ring import measurements as m
 
 
 # noinspection PyPep8Naming
@@ -26,7 +28,7 @@ class RingWindow(QMainWindow):
 
     def __init__(self, dna_ch=None, sig_ch=None):
         super(RingWindow, self).__init__()
-        path = os.path.join(sys.path[0], __package__)
+        path = os.path.join(sys.path[0], *__package__.split('.'))
 
         uic.loadUi(os.path.join(path, 'gui_ring.ui'), self)
 
@@ -53,7 +55,7 @@ class RingWindow(QMainWindow):
         self.grphtimer = QTimer()
         self.grphtimer.setSingleShot(True)
 
-        self.stk = StkRingWidget(self.image, linePicked=self.onLinePickedFromStackGraph)
+        # self.stk = StkRingWidget(self.image, linePicked=self.onLinePickedFromStackGraph)
 
         self.grph.linePicked.connect(self.onLinePickedFromGraph)
         # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
@@ -77,7 +79,7 @@ class RingWindow(QMainWindow):
 
         self.show()
         self.grph.show()
-        self.stk.show()
+        # self.stk.show()
         self.ctrl.show()
         self.move(0, 0)
         self.resizeEvent(None)
@@ -94,7 +96,7 @@ class RingWindow(QMainWindow):
     def moveEvent(self, QMoveEvent):
         self.ctrl.move(self.frameGeometry().topRight())
         self.grph.move(self.geometry().bottomLeft())
-        self.stk.move(self.ctrl.frameGeometry().topRight())
+        # self.stk.move(self.ctrl.frameGeometry().topRight())
 
     def closeEvent(self, event):
         self._saveCurrentFileMeasurements()
@@ -104,13 +106,13 @@ class RingWindow(QMainWindow):
         #     self.df.to_csv(os.path.join(os.path.dirname(self.image.file), "ringlines.csv"))
         self.grph.close()
         self.ctrl.close()
-        self.stk.close()
+        # self.stk.close()
 
     def focusInEvent(self, QFocusEvent):
         self.log.debug('focusInEvent')
         self.ctrl.activateWindow()
         self.grph.activateWindow()
-        self.stk.focusInEvent(None)
+        # self.stk.focusInEvent(None)
 
     def showEvent(self, event):
         self.setFocus()
@@ -161,7 +163,7 @@ class RingWindow(QMainWindow):
     def onRenderChk(self):
         self.log.debug('onRenderChk')
         self.image.renderMeasurements = self.ctrl.renderChk.isChecked()
-        self.stk.renderMeasurements = self.ctrl.renderChk.isChecked()
+        # self.stk.renderMeasurements = self.ctrl.renderChk.isChecked()
 
     @QtCore.pyqtSlot()
     def onOpenButton(self):
@@ -192,61 +194,65 @@ class RingWindow(QMainWindow):
         self.currN = None
         self.currZ = None
 
-        self.stk.close()
-        self.stk = StkRingWidget(self.image,
-                                 nucleus_id=self.image.currNucleusId,
-                                 linePicked=self.onLinePickedFromStackGraph,
-                                 line_length=self.line_length,
-                                 dl=self.image.dl,
-                                 lines_to_measure=self.image._nlin
-                                 )
-        # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
-        self.stk.loadImages(self.image.images, xy=(100, 100), wh=(200, 200))
-        self.stk.hide()
-        self.stk.show()
+        # self.stk.close()
+        # self.stk = StkRingWidget(self.image,
+        #                          nucleus_id=self.image.currNucleusId,
+        #                          linePicked=self.onLinePickedFromStackGraph,
+        #                          line_length=self.line_length,
+        #                          dl=self.image.dl,
+        #                          lines_to_measure=self.image._nlin
+        #                          )
+        # # self.stk.linePicked.connect(self.onLinePickedFromStackGraph)
+        # self.stk.loadImages(self.image.images, xy=(100, 100), wh=(200, 200))
+        # self.stk.hide()
+        # self.stk.show()
         self.moveEvent(None)
 
     @QtCore.pyqtSlot()
     def onImgUpdate(self):
         # self.log.debug(f"onImgUpdate")
         self.ctrl.renderChk.setChecked(True)
-        self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-        self.log.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
-        self.stk.drawMeasurements(erase_bkg=True)
+        # self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
+        # self.log.debug(f"onImgUpdate. Selected line is {self.stk.selectedLineId}")
+        # self.stk.drawMeasurements(erase_bkg=True)
         self.grphtimer.start(1000)
 
     @QtCore.pyqtSlot()
     def onNucleusPickedFromImage(self):
-        self.log.debug('onNucleusPickedFromImage')
-        self.stk.dnaChannel = self.image.dnaChannel
-        self.stk.rngChannel = self.image.rngChannel
-        self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-        self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
+        self.log.debug('onNucleusPickedFromImage\r\n'
+                       f'    current image={self.image.file}\r\n'
+                       f'    current nucleus={self.image.currNucleusId}')
+        # self.stk.dnaChannel = self.image.dnaChannel
+        # self.stk.rngChannel = self.image.rngChannel
+        # self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
+        # self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
 
-        # test rectification code
-        tsplaprx = TestSplineApproximation(self.image.currNucleus, self.image)
-        tsplaprx.test_fit()
-        tsplaprx.plot_grid()
-
-        trct = TestPiecewiseLinearRectification(tsplaprx, dl=4, n_dl=10, n_theta=100, pix_per_dl=1, pix_per_theta=1)
-        trct.plot_rectification()
-
-        tfnrect = TestFunctionRectification(tsplaprx, pix_per_dl=1, pix_per_arclen=1)
-        tfnrect.plot_rectification()
+        # # test rectification code
+        # tsplaprx = PlotSplineApproximation(self.image.currNucleus, self.image)
+        # tsplaprx.fit_xy(ax=plt.figure(10).gca())
+        # tsplaprx.fit_polygon(ax=plt.figure(11).gca())
+        # tsplaprx.grid(ax=plt.figure(12).gca())
+        #
+        # trct = TestPiecewiseLinearRectification(tsplaprx, dl=4, n_dl=10, n_theta=100, pix_per_dl=1, pix_per_theta=1)
+        # trct.plot_rectification()
+        #
+        # tfnrect = TestFunctionRectification(tsplaprx, pix_per_dl=1, pix_per_arclen=1)
+        # tfnrect.plot_rectification()
+        # plt.show(block=False)
 
         minx, miny, maxx, maxy = self.image.currNucleus.bounds
         r = int(max(maxx - minx, maxy - miny) / 2)
-        self.stk.loadImages(self.image.images, xy=[n[0] for n in self.image.currNucleus.centroid.xy],
-                            wh=(r * self.image.pix_per_um, r * self.image.pix_per_um))
-        self.stk.measure()
-        self.stk.drawMeasurements(erase_bkg=True)
+        # self.stk.loadImages(self.image.images, xy=[n[0] for n in self.image.currNucleus.centroid.xy],
+        #                     wh=(r * self.image.pix_per_um, r * self.image.pix_per_um))
+        # self.stk.measure()
+        # self.stk.drawMeasurements(erase_bkg=True)
 
     @QtCore.pyqtSlot()
     def onMeasureButton(self):
         self.log.debug('onMeasureButton')
         self.image.paint_measures()
         self._graph(alpha=0.2)
-        self._graphTendency()
+        # self._graphTendency()
 
     @QtCore.pyqtSlot()
     def onZValueChange(self):
@@ -344,14 +350,14 @@ class RingWindow(QMainWindow):
             self.currMeasurement = self.image.measurements
             self.currN = self.selectedLine
             self.currZ = self.image.zstack
-            self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-            self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
-            self.stk.selectedZ = self.currZ
+            # self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
+            # self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
+            # self.stk.selectedZ = self.currZ
 
-            try:
-                self.stk.drawMeasurements(erase_bkg=True)
-            except Exception as e:
-                self.log.error(e)
+            # try:
+            #     self.stk.drawMeasurements(erase_bkg=True)
+            # except Exception as e:
+            #     self.log.error(e)
 
             self.statusbar.showMessage("line %d selected" % self.selectedLine)
 
@@ -375,8 +381,8 @@ class RingWindow(QMainWindow):
         if self.selectedLine is not None:
             self.currN = self.selectedLine
             self.currZ = self.image.zstack
-            self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
-            self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
-            self.stk.selectedZ = self.currZ
+            # self.stk.selectedLineId = self.image.selectedLine if self.image.selectedLine is not None else 0
+            # self.stk.selectedNucId = self.image.currNucleusId if self.image.currNucleusId is not None else 0
+            # self.stk.selectedZ = self.currZ
 
             self.statusbar.showMessage("Line %d selected" % self.selectedLine)

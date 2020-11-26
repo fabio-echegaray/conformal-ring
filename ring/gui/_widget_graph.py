@@ -2,12 +2,12 @@ import os
 import sys
 import logging
 
-from PyQt5 import Qt, QtCore, uic
+from PyQt5 import Qt, uic
 from PyQt5.QtWidgets import QWidget
 import matplotlib.ticker as ticker
 from matplotlib.ticker import EngFormatter
 
-from gui.gui_mplwidget import MplWidget
+from ring.gui.gui_mplwidget import MplWidget
 
 logger = logging.getLogger('ring.gui')
 
@@ -18,7 +18,7 @@ class GraphWidget(QWidget):
 
     def __init__(self):
         super(GraphWidget, self).__init__()
-        path = os.path.join(sys.path[0], __package__)
+        path = os.path.join(sys.path[0], *__package__.split('.'))
         uic.loadUi(os.path.join(path, 'gui_ring_graph.ui'), self)
         self.canvas.callbacks.connect('pick_event', self.on_pick)
 
