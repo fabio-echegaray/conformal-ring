@@ -15,7 +15,7 @@
 ![Example screenshot](./img/screenshot.png)
 
 ## Technologies
-Requires has been tested with versions of Python 3.6 or greater and PyQt 5. There are also some packages that this library depends on. For specifics, see requirements.txt.
+The software has been tested with versions of Python 3.6 or greater and PyQt 5. There are also some packages that this library depends on. For specifics, see requirements.txt.
 
 ## Setup
 `git clone https://github.com/fabio-echegaray/ring.git`
@@ -40,7 +40,7 @@ Created by [@fabioechegaray](https://twitter.com/fabioechegaray)
 * [github](https://github.com/fabio-echegaray)
 Feel free to contact me!
 
-## Licence
+## License
     Image Rectification Around a Curve
     Copyright (C) 2020  Fabio Echegaray
 
