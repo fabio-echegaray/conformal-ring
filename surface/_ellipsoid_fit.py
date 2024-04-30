@@ -2,15 +2,17 @@ import itertools
 from threading import Semaphore
 
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from scipy.optimize import basinhopping
+from scipy.spatial.transform import Rotation as R
 
 
 class EllipsoidFit:
     _prop_keys: dict = {}
 
-    def __init__(self, vtk_ellipsoid, xyz_0=(0, 0, 0)):
+    def __init__(self, vtk_ellipsoid, xyz_0=(0, 0, 0), sample_spacing=1):
         # self._ppm = pix_per_um
+
+        self._spac = sample_spacing
 
         self._vtk_ellipsoid = vtk_ellipsoid
         self._a = vtk_ellipsoid.x_radius
@@ -40,9 +42,11 @@ class EllipsoidFit:
 
         self._surf_eval = False
 
-        self.xl = []
-        self.yl = []
-        self.zl = []
+        self.xl = None
+        self.yl = None
+        self.zl = None
+        self._pts = None
+        self.pts = None
         self.projected_img_2d = None
         self.calculating_semaphore = Semaphore()
 
@@ -63,11 +67,10 @@ class EllipsoidFit:
         }
 
     def z(self, x, y):
-        x1 = self._r.dot(np.array([[x - self._x0, y - self._y0, 0]]).T) + self._X
-        z2 = 1 - x1[0] ** 2 / self._a2 - x1[0] ** 2 / self._b2
+        z2 = 1 - (x - self._x0) ** 2 / self._a2 - (y - self._y0) ** 2 / self._b2
         z = self._c * np.sqrt(z2)
         # return [self._z0 - z, self._z0 + z]
-        return self._z0 - z[0]
+        return self._z0 - z
 
     def __setattr__(self, name, value):
         if name in self._prop_keys.keys():
@@ -88,29 +91,53 @@ class EllipsoidFit:
     @volume.setter
     def volume(self, vol: np.array):
         self._vol = vol
-        self._nz, self._w, self._h = vol.shape
+        self._nz, self._h, self._w = vol.shape
         self._dtype = vol.dtype
 
         self.projected_img_2d = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
+        self._calc_z_surf()
 
+    def _calc_z_surf(self):
+        pts = []
+        x0 = self._w / self._spac / 2
+        y0 = self._h / self._spac / 2
+        for xi, yi in itertools.product(range(int(self._w / self._spac)), range(int(self._h / self._spac))):
+            xi -= x0
+            yi -= y0
+            xi *= self._spac
+            yi *= self._spac
+            pts.append([xi, yi, self.z(xi, yi)])
+        self._pts = np.asarray(pts).T
         with self.calculating_semaphore:
-            self.xl, self.yl = [], []
-            for xi, yi in itertools.product(range(self._w), range(self._h)):
-                self.xl.append(xi)
-                self.yl.append(yi)
-            self.zl = [0] * len(self.xl)
+            self.pts = self._pts.copy()
+            self.xl, self.yl, self.zl = self.pts
 
     def eval_surf(self):
         if self._surf_eval:
             return
 
-        self._r = R.from_quat([self._u0, self._u1, self._u2, self._th]).as_matrix()
-        self._X = np.array([[self._x0, self._y0, self._z0]]).T
+        self._calc_z_surf()
+
+        u0, u1, u2, cth_2 = self._u0, self._u1, self._u2, np.cos(self._th / 2)
+        # print(f"eval_surf {R.from_quat([u0, u1, u2, cth_2]).as_euler('YZX', degrees=True)}")
+        # print(f"eval_surf {R.from_quat([u0, u2, u1, cth_2]).as_euler('YZX', degrees=True)}")
+        # print(f"eval_surf {R.from_quat([u1, u0, u2, cth_2]).as_euler('YZX', degrees=True)}")
+        # print(f"eval_surf {R.from_quat([u1, u2, u0, cth_2]).as_euler('YZX', degrees=True)}")
+        # print(f"eval_surf {R.from_quat([u2, u0, u1, cth_2]).as_euler('YZX', degrees=True)}")
+        # print(f"eval_surf {R.from_quat([u2, u1, u0, cth_2]).as_euler('YZX', degrees=True)}")
+
+        r = R.from_quat([u0, u1, u2, cth_2])
+        # r = R.from_quat([u0, u2, u1, cth_2])
+        # r = R.from_quat([u1, u0, u2, cth_2])
+        # r = R.from_quat([u1, u2, u0, cth_2])
+        # r = R.from_quat([u2, u0, u1, cth_2])
+        # r = R.from_quat([u2, u1, u0, cth_2])
+        X = np.array([[self._x0, self._y0, self._z0]]).T
         with self.calculating_semaphore:
-            self.zl = []
-            for xi, yi in zip(self.xl, self.yl):
-                self.zl.append(self.z(xi, yi))
-        assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened while calculating z"
+            # np.copyto(self.pts, (r.as_matrix().dot(self.pts - X) + X))
+            np.copyto(self.pts, (r.as_matrix().dot(self._pts - X)))
+            # np.copyto(self.pts, r.apply(self.pts.T).T)
+
         self._surf_eval = True
 
     def project_2d(self):
