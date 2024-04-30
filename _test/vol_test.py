@@ -9,27 +9,23 @@ from mayavi.sources.parametric_surface import ParametricSurface
 from vtkmodules.util import numpy_support
 from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.vtkIOImage import vtkPNGWriter
+from threading import Thread
+from scipy.spatial.transform import Rotation as R
 
 from fileops.export.config import create_cfg_file, read_config
 
+from surface import EllipsoidFit
 
-class Ellipsoid:
-    def __init__(self, vtk_ellipsoid, xyz_0=(0, 0, 0)):
-        self._vtk_ellipsoid = vtk_ellipsoid
-        self._a = vtk_ellipsoid.x_radius
-        self._b = vtk_ellipsoid.y_radius
-        self._c = vtk_ellipsoid.z_radius
-        self._a2 = self._a ** 2
-        self._b2 = self._b ** 2
-        self._c2 = self._c ** 2
-        self._x0 = xyz_0[0]
-        self._y0 = xyz_0[1]
-        self._z0 = xyz_0[2]
 
-    def z(self, x, y):
-        z2 = 1 - (x - self._x0) ** 2 / self._a2 - (y - self._y0) ** 2 / self._b2
-        z = self._c * np.sqrt(z2)
-        return [self._z0 - z, self._z0 + z]
+class ThreadedAction(Thread):
+    def __init__(self, ellipsoid: EllipsoidFit, **kwargs):
+        Thread.__init__(self, **kwargs)
+        self._e = ellipsoid
+
+    def run(self):
+        print("Fitting ellipsoid to data ...")
+        self._e.optimize_parameters()
+        print('done.')
 
 
 if __name__ == "__main__":
@@ -45,18 +41,13 @@ if __name__ == "__main__":
                         contents={
                             "DATA": {
                                 "image": img_path.as_posix(),
-                                "series": 0,  # TODO: change
-                                "channel": [0, 1],  # TODO: change
+                                "series": 0,
+                                "channel": [0, 1],
                                 "frame": 1
                             }
                         })
     cfg = read_config(cfg_path)
 
-    # img_path = Path('./tiff/ch1/ch1_fr001.tiff')
-    # if not img_path.exists():
-    #     export_vtk(cfg, None)
-    # # Load the data
-    # img = load_image_file(Path('./tiff/ch1/ch1_fr001.tiff'))
     imgser = cfg.image_file.image_series(channel=1, zstack='all', frame=31, as_8bit=False)
 
     mlab.figure(1, bgcolor=(0, 0, 0), size=(500, 500))
@@ -64,14 +55,12 @@ if __name__ == "__main__":
 
     data = imgser.images[0].reshape((imgser.zstacks, imgser.width, imgser.height))
     source = mlab.pipeline.scalar_field(data.T)
-    source.spacing = [1, 1, 1]
+    source.spacing = [1, 1, 10]
     min = data.min()
     max = data.max()
     vol = mlab.pipeline.volume(source,
                                vmin=min + 0.3 * (max - min),
                                vmax=min + 0.9 * (max - min))
-
-    # vol.volume.rotate_y(90)
 
     engine = mlab.get_engine()
     source = ParametricSurface()
@@ -94,37 +83,28 @@ if __name__ == "__main__":
     surface = Surface()
     source.add_module(surface)
 
-    e = Ellipsoid(source.parametric_function, xyz_0=(x0, y0, z0))
-    xl, yl, zl = [], [], []
-    for xi, yi in itertools.product(range(cfg.image_file.width), range(cfg.image_file.height)):
-        xl.append(xi)
-        yl.append(yi)
-        zl.append(e.z(xi, yi)[0])
-    mlab.points3d(xl, yl, zl, [1] * len(xl), color=(1, 0, 1), scale_factor=1)
+    e = EllipsoidFit(source.parametric_function, xyz_0=(x0, y0, z0))
+    e.volume = data
+    e.eval_surf()
+    mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=1)
 
     # obtain projection of volumetric data onto 3D surface
-    img = np.zeros((cfg.image_file.width, cfg.image_file.height), dtype=cfg.image_file.image(0).image.dtype)
-    changes = 0
-    for xi, yi, zi in zip(xl, yl, np.floor(np.array(zl)).astype(int)):
-        if 0 <= zi <= cfg.image_file.n_zstacks:
-            # print(data[xi, yi, zi])
-            img[xi, yi] = data[zi, xi, yi]
-            changes += 1
+    # img, changes = e.project_2d()
 
     # write image to PNG
-    depth_array = numpy_support.numpy_to_vtk(img.ravel(), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
-    depth_array.SetNumberOfComponents(1)
+    # depth_array = numpy_support.numpy_to_vtk(img.ravel(), deep=True, array_type=vtk.VTK_UNSIGNED_SHORT)
+    # depth_array.SetNumberOfComponents(1)
 
-    imagedata = vtkImageData()
-    imagedata.SetSpacing([1, 1, 1])
-    imagedata.SetOrigin([-1, -1, -1])
-    imagedata.SetDimensions(cfg.image_file.width, cfg.image_file.height, 1)
-    imagedata.GetPointData().SetScalars(depth_array)
-
-    writer = vtkPNGWriter()
-    writer.SetInputData(imagedata)
-    writer.SetFileName("projection.png")
-    writer.Write()
+    # imagedata = vtkImageData()
+    # # imagedata.SetSpacing([1, 1, 1])
+    # # imagedata.SetOrigin([-1, -1, -1])
+    # imagedata.SetDimensions(cfg.image_file.width, cfg.image_file.height, 1)
+    # imagedata.GetPointData().SetScalars(depth_array)
+    #
+    # writer = vtkPNGWriter()
+    # writer.SetInputData(imagedata)
+    # writer.SetFileName("projection.png")
+    # writer.Write()
 
     actor = surface.actor  # mayavi actor, actor.actor is tvtk actor
     # actor.property.ambient = 1 # defaults to 0 for some reason, ah don't need it, turn off scalar visibility instead
@@ -136,16 +116,36 @@ if __name__ == "__main__":
     # actor.property.frontface_culling = True
     actor.actor.orientation = np.array([1, 0, 0]) * 360  # in degrees
     actor.actor.origin = np.array([0, 0, 0])
-    # actor.actor.position = np.array([0, 0, 0])
     actor.actor.scale = np.array([1, 1, 1])
-    # actor.actor.origin = np.array([0, 0, 0])
     actor.actor.position = np.array([x0, y0, z0])
-    # actor.actor.scale = np.array([e0, e1, e2])
     actor.enable_texture = True
     actor.property.representation = ['wireframe', 'surface'][1]
 
-    # mlab.view(132, 54, 45, [21, 20, 21.5])
-    # mlab.axes()
     mlab.orientation_axes()
 
+    # mlab.figure(2, bgcolor=(0, 0, 0), size=(500, 500))
+    # mlab.imshow(img)
+
+    te = ThreadedAction(e)
+    te.start()
+
+
+    @mlab.animate(delay=2000, ui=False)
+    def update_visualisation(srf):
+        while True:
+            print(f'Updating Visualisation {e.state()}')
+            x0, y0, z0, a, b, c, u0, u1, u2, theta = e.state()
+
+            r = R.from_quat([u0, u1, u2, theta])
+
+            actor = srf.actor  # mayavi actor, actor.actor is tvtk actor
+            actor.actor.orientation = r.as_rotvec(degrees=True)
+            actor.actor.position = np.array([x0, y0, z0])
+            # actor.actor.scale = np.array([a, b, c])
+
+            # drawing.mlab_source.set(x=x, y=y, z=z)
+            yield
+
+
+    update_visualisation(surface)
     mlab.show()
