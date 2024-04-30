@@ -86,7 +86,7 @@ if __name__ == "__main__":
     e = EllipsoidFit(source.parametric_function, xyz_0=(x0, y0, z0))
     e.volume = data
     e.eval_surf()
-    mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=1)
+    points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=1)
 
     # obtain projection of volumetric data onto 3D surface
     # img, changes = e.project_2d()
@@ -130,10 +130,14 @@ if __name__ == "__main__":
     te.start()
 
 
-    @mlab.animate(delay=2000, ui=False)
-    def update_visualisation(srf):
+    @mlab.animate(delay=2000)
+    def update_visualisation(srf, pts):
         while True:
-            print(f'Updating Visualisation {e.state()}')
+            with e.calculating_semaphore:
+                print(f'Updating Visualisation {np.round(e.state(), 1)} ({len(e.xl)} {len(e.yl)} {len(e.zl)})')
+                assert len(e.xl) == len(e.yl) and len(e.xl) == len(e.zl), "strange cat"
+                pts.mlab_source.set(x=e.xl, y=e.yl, z=e.zl)
+
             x0, y0, z0, a, b, c, u0, u1, u2, theta = e.state()
 
             r = R.from_quat([u0, u1, u2, theta])
@@ -143,9 +147,8 @@ if __name__ == "__main__":
             actor.actor.position = np.array([x0, y0, z0])
             # actor.actor.scale = np.array([a, b, c])
 
-            # drawing.mlab_source.set(x=x, y=y, z=z)
             yield
 
 
-    update_visualisation(surface)
+    update_visualisation(surface, points)
     mlab.show()

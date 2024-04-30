@@ -1,4 +1,5 @@
 import itertools
+from threading import Semaphore
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -31,7 +32,7 @@ class EllipsoidFit:
         self._X = None
 
         # quaternion vector and angle
-        self._u0 = 0
+        self._u0 = 1
         self._u1 = 0
         self._u2 = 0
         self._th = 0
@@ -42,6 +43,8 @@ class EllipsoidFit:
         self.xl = []
         self.yl = []
         self.zl = []
+        self.projected_img_2d = None
+        self.calculating_semaphore = Semaphore()
 
         self._prop_keys = {
             "x0": "self._x0",
@@ -60,11 +63,11 @@ class EllipsoidFit:
         }
 
     def z(self, x, y):
-        x1 = self._r * np.array([x - self._x0, y - self._y0, 0]).T + self._X
+        x1 = self._r.dot(np.array([[x - self._x0, y - self._y0, 0]]).T) + self._X
         z2 = 1 - x1[0] ** 2 / self._a2 - x1[0] ** 2 / self._b2
         z = self._c * np.sqrt(z2)
         # return [self._z0 - z, self._z0 + z]
-        return self._z0 - z
+        return self._z0 - z[0]
 
     def __setattr__(self, name, value):
         if name in self._prop_keys.keys():
@@ -88,23 +91,32 @@ class EllipsoidFit:
         self._nz, self._w, self._h = vol.shape
         self._dtype = vol.dtype
 
+        self.projected_img_2d = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
+
+        with self.calculating_semaphore:
+            self.xl, self.yl = [], []
+            for xi, yi in itertools.product(range(self._w), range(self._h)):
+                self.xl.append(xi)
+                self.yl.append(yi)
+            self.zl = [0] * len(self.xl)
+
     def eval_surf(self):
         if self._surf_eval:
             return
 
         self._r = R.from_quat([self._u0, self._u1, self._u2, self._th]).as_matrix()
-        self._X = np.array([self._x0, self._y0, self._z0])
-        self.xl, self.yl, self.zl = [], [], []
-        for xi, yi in itertools.product(range(self._w), range(self._h)):
-            self.xl.append(xi)
-            self.yl.append(yi)
-            self.zl.append(self.z(xi, yi))
+        self._X = np.array([[self._x0, self._y0, self._z0]]).T
+        with self.calculating_semaphore:
+            self.zl = []
+            for xi, yi in zip(self.xl, self.yl):
+                self.zl.append(self.z(xi, yi))
+        assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened while calculating z"
         self._surf_eval = True
 
     def project_2d(self):
         self.eval_surf()
 
-        img = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
+        self.projected_img_2d[:, :] = 0
 
         zf = np.array(self.zl)
         zix = np.logical_and(~np.isnan(zf), np.logical_and(0 <= zf, zf < self._nz))
@@ -113,17 +125,17 @@ class EllipsoidFit:
         if changes > 0:
             for xi, yi, zi in zip(np.array(self.xl)[zix], np.array(self.yl)[zix], zf):
                 # if 0 <= xi < self._w and 0 <= yi < self._h and 0 <= zi < self._nz:
-                img[xi, yi] = self._vol[zi, xi, yi]
+                self.projected_img_2d[xi, yi] = self._vol[zi, xi, yi]
                 changes += 1
 
-        return img, changes
+        assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
+        return np.sum(self.projected_img_2d), changes
 
     def _obj_fn_minimize(self, xv):
         self.x0, self.y0, self.z0, self.x_radius, self.y_radius, self.z_radius, self.u0, self.u1, self.u2, self.theta = xv
-        _i, _c = self.project_2d()
-        sum = np.sum(_i)
-        out = 1 / (0.1 * _c + sum)
-        print(f"testing f({xv})=1/(0.1*{_c}+{sum})={out}")
+        s, chg = self.project_2d()
+        out = 1 / (0.1 * chg + s)
+        print(f"testing f({xv})=1/(0.1*{chg}+{s})={out}")
 
         return out
 
