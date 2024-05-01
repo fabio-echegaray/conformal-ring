@@ -38,7 +38,7 @@ class EllipsoidFit:
         self._u1 = 0
         self._u2 = 0
         self._th = 0
-        self._r = None
+        self._r: R = None
 
         self._surf_eval = False
 
@@ -67,9 +67,19 @@ class EllipsoidFit:
         }
 
     def z(self, x, y):
-        z2 = 1 - (x - self._x0) ** 2 / self._a2 - (y - self._y0) ** 2 / self._b2
-        z = self._c * np.sqrt(z2)
-        # return [self._z0 - z, self._z0 + z]
+        # beta, alpha, gamma = self._r.as_euler('YZX', degrees=False)
+        # cxy = x * np.sin(beta) - y * np.sin(gamma) * np.cos(beta)
+        # cz = np.cos(beta) * np.cos(gamma)
+
+        R = self._r.as_matrix()
+        xyz = R.dot(np.array([x - self._x0, y - self._y0, 0]))
+
+        cxy = -x * R[2, 0] + y * R[2, 1]
+        cz = R[2, 2]
+
+        z2 = 1 - xyz[0] ** 2 / self._a2 - xyz[1] ** 2 / self._b2
+        z = self._c * (np.sqrt(z2) - cxy) / cz
+
         return self._z0 - z
 
     def __setattr__(self, name, value):
@@ -95,48 +105,24 @@ class EllipsoidFit:
         self._dtype = vol.dtype
 
         self.projected_img_2d = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
-        self._calc_z_surf()
-
-    def _calc_z_surf(self):
-        pts = []
-        x0 = self._w / self._spac / 2
-        y0 = self._h / self._spac / 2
-        for xi, yi in itertools.product(range(int(self._w / self._spac)), range(int(self._h / self._spac))):
-            xi -= x0
-            yi -= y0
-            xi *= self._spac
-            yi *= self._spac
-            pts.append([xi, yi, self.z(xi, yi)])
-        self._pts = np.asarray(pts).T
-        with self.calculating_semaphore:
-            self.pts = self._pts.copy()
-            self.xl, self.yl, self.zl = self.pts
+        self.eval_surf()
 
     def eval_surf(self):
         if self._surf_eval:
             return
 
-        self._calc_z_surf()
-
         u0, u1, u2, cth_2 = self._u0, self._u1, self._u2, np.cos(self._th / 2)
-        # print(f"eval_surf {R.from_quat([u0, u1, u2, cth_2]).as_euler('YZX', degrees=True)}")
-        # print(f"eval_surf {R.from_quat([u0, u2, u1, cth_2]).as_euler('YZX', degrees=True)}")
-        # print(f"eval_surf {R.from_quat([u1, u0, u2, cth_2]).as_euler('YZX', degrees=True)}")
-        # print(f"eval_surf {R.from_quat([u1, u2, u0, cth_2]).as_euler('YZX', degrees=True)}")
-        # print(f"eval_surf {R.from_quat([u2, u0, u1, cth_2]).as_euler('YZX', degrees=True)}")
-        # print(f"eval_surf {R.from_quat([u2, u1, u0, cth_2]).as_euler('YZX', degrees=True)}")
+        self._r = R.from_quat([u0, u1, u2, cth_2])
 
-        r = R.from_quat([u0, u1, u2, cth_2])
-        # r = R.from_quat([u0, u2, u1, cth_2])
-        # r = R.from_quat([u1, u0, u2, cth_2])
-        # r = R.from_quat([u1, u2, u0, cth_2])
-        # r = R.from_quat([u2, u0, u1, cth_2])
-        # r = R.from_quat([u2, u1, u0, cth_2])
-        X = np.array([[self._x0, self._y0, self._z0]]).T
+        pts = []
+        for xi, yi in itertools.product(range(int(self._w / self._spac)), range(int(self._h / self._spac))):
+            xi *= self._spac
+            yi *= self._spac
+            pts.append([xi, yi, self.z(xi, yi)])
+        self._pts = np.asarray(pts).T
         with self.calculating_semaphore:
-            # np.copyto(self.pts, (r.as_matrix().dot(self.pts - X) + X))
-            np.copyto(self.pts, (r.as_matrix().dot(self._pts - X)))
-            # np.copyto(self.pts, r.apply(self.pts.T).T)
+            self.pts = self._pts.copy().astype(int)
+            self.xl, self.yl, self.zl = self.pts
 
         self._surf_eval = True
 
@@ -150,7 +136,8 @@ class EllipsoidFit:
         zf = np.floor(zf[zix]).astype(int)
         changes = len(zf)
         if changes > 0:
-            for xi, yi, zi in zip(np.array(self.xl)[zix], np.array(self.yl)[zix], zf):
+            for xi, yi, zi in zip(np.array(self.xl / self._spac).astype(int)[zix],
+                                  np.array(self.yl / self._spac).astype(int)[zix], zf):
                 # if 0 <= xi < self._w and 0 <= yi < self._h and 0 <= zi < self._nz:
                 self.projected_img_2d[xi, yi] = self._vol[zi, xi, yi]
                 changes += 1

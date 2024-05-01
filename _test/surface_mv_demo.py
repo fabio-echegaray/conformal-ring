@@ -10,18 +10,6 @@ from surface import EllipsoidFit
 
 np.set_printoptions(precision=2)
 
-
-class ThreadedAction(Thread):
-    def __init__(self, ellipsoid: EllipsoidFit, **kwargs):
-        Thread.__init__(self, **kwargs)
-        self._e = ellipsoid
-
-    def run(self):
-        print("Fitting ellipsoid to data ...")
-        self._e.optimize_parameters()
-        print('done.')
-
-
 if __name__ == "__main__":
     mlab.figure(1, bgcolor=(0, 0, 0), size=(500, 500))
     mlab.clf()
@@ -43,12 +31,12 @@ if __name__ == "__main__":
     u0, u1, u2, theta = 1, 0, 0, np.pi / 2
     r = R.from_quat([u0, u1, u2, theta / 2])
 
-    e = EllipsoidFit(source.parametric_function, xyz_0=(x0, y0, z0), sample_spacing=10)
-    e.volume = np.empty(shape=(25, 512, 512))
-    e.u0, e.u1, e.u2, e.theta = u0, u1, u2, theta
+    e = EllipsoidFit(source.parametric_function, xyz_0=(x0, y0, z0), sample_spacing=50)
+    e.u0, e.u1, e.u2, e.theta = u1, -u2, -u0, theta
+    e.volume = np.empty(shape=(25, a * 4, b * 2))
 
     points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=10)
-    o = mlab.quiver3d(0, 1, 0, scale_factor=2 * b)
+    o = mlab.quiver3d(u0, u1, u2, scale_factor=2 * b)
 
     o.actor.actor.orientation = r.as_euler('XYZ', degrees=True)
 
@@ -58,27 +46,29 @@ if __name__ == "__main__":
     actor.mapper.scalar_visibility = False  # don't colour ellipses by their scalar indices into colour map
     actor.property.backface_culling = True  # gets rid of weird rendering artifact when opacity is < 1
     actor.property.specular = 0.1
-    actor.actor.orientation = r.as_euler('YZX', degrees=True)
+    # actor.actor.orientation = r.as_euler('YZX', degrees=True)
     actor.actor.origin = np.array([0, 0, 0])
     actor.actor.scale = np.array([1, 1, 1])
-    actor.actor.position = np.array([0, 0, 0])
+    actor.actor.position = np.array([x0, y0, z0])
     actor.property.representation = ['wireframe', 'surface'][1]
 
 
-    @mlab.animate(delay=200)
+    @mlab.animate(delay=500)
     def update_visualisation(srf, pts, o):
-        theta = np.linspace(0, 2 * np.pi, 360)
+        theta = np.linspace(0, 2 * np.pi, 10)
         xr = np.linspace(-1000, 1000, 40)
         i = j = 0
         while True:
             i = (i + 1) % len(theta)
             j = (j + 1) % len(xr)
-            x0, x1, x2 = xr[j], 0, 0
+            x0, y0, z0 = xr[j], xr[j], 0
             r = R.from_quat([u0, u1, u2, np.cos(theta[i] / 2)])
 
             # order of angles follows [pitch, roll, yaw]
             srf.actor.actor.orientation = r.as_euler('YZX', degrees=True)
             o.actor.actor.orientation = r.as_euler('YZX', degrees=True)
+            srf.actor.actor.position = np.array([x0, y0, z0])
+            o.actor.actor.position = np.array([x0, y0, z0])
 
             # --------------------------------------------------------------
             #  DEBUG info
@@ -101,8 +91,8 @@ if __name__ == "__main__":
             print(f"logical check if q1==q2 {np.dot(r.as_quat(canonical=False), r2.as_quat(canonical=False))}")
 
             # recompute points on surface given new coordinates
-            e.x0, e.y0, e.z0 = x0, x1, x2
-            e.u0, e.u1, e.u2 = u1, -u2, u0
+            e.x0, e.y0, e.z0 = x0, y0, z0
+            e.u0, e.u1, e.u2 = u1, -u2, -u0
             e.theta = theta[i]
             e.eval_surf()
 
