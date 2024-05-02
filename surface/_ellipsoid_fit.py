@@ -32,13 +32,19 @@ class EllipsoidFit:
         self._y0 = xyz_0[1]
         self._z0 = xyz_0[2]
         self._X = None
+        self._xl = None
+        self._yl = None
+        self._xv = None
+        self._yv = None
+        self._zv = None
 
-        # quaternion vector and angle
-        self._u0 = 1
-        self._u1 = 0
-        self._u2 = 0
-        self._th = 0
+        # euler angles
+        self._roll = 0
+        self._ptch = 0
+        self._yaw = 0
         self._r: R = None
+        self._R: np.array = None
+        self._Ri: np.array = None
 
         self._surf_eval = False
 
@@ -54,10 +60,9 @@ class EllipsoidFit:
             "x0": "self._x0",
             "y0": "self._y0",
             "z0": "self._z0",
-            "u0": "self._u0",
-            "u1": "self._u1",
-            "u2": "self._u2",
-            "theta": "self._th",
+            "roll": "self._roll",
+            "pitch": "self._ptch",
+            "yaw": "self._yaw",
             "x_radius": "self._a",
             "y_radius": "self._b",
             "z_radius": "self._c",
@@ -65,22 +70,6 @@ class EllipsoidFit:
             "y_radius2": "self._b2",
             "z_radius2": "self._c2",
         }
-
-    def z(self, x, y):
-        # beta, alpha, gamma = self._r.as_euler('YZX', degrees=False)
-        # cxy = x * np.sin(beta) - y * np.sin(gamma) * np.cos(beta)
-        # cz = np.cos(beta) * np.cos(gamma)
-
-        R = self._r.as_matrix()
-        xyz = R.dot(np.array([x - self._x0, y - self._y0, 0]))
-
-        cxy = -x * R[2, 0] + y * R[2, 1]
-        cz = R[2, 2]
-
-        z2 = 1 - xyz[0] ** 2 / self._a2 - xyz[1] ** 2 / self._b2
-        z = self._c * (np.sqrt(z2) - cxy) / cz
-
-        return self._z0 - z
 
     def __setattr__(self, name, value):
         if name in self._prop_keys.keys():
@@ -92,7 +81,7 @@ class EllipsoidFit:
             super().__setattr__(name, value)
 
     def state(self):
-        return self._x0, self._y0, self._z0, self._a, self._b, self._c, self._u0, self._u1, self._u2, self._th
+        return self._x0, self._y0, self._z0, self._a, self._b, self._c, self._roll, self._ptch, self._yaw
 
     @property
     def volume(self):
@@ -105,24 +94,49 @@ class EllipsoidFit:
         self._dtype = vol.dtype
 
         self.projected_img_2d = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
+
+        self._x0 = int(self._a * 3 / 2)
+        self._y0 = int(self._b * 3 / 2)
+        self._xl = [x * self._spac - self._x0 for x in range(int(self._a * 3 / self._spac))]
+        self._yl = [y * self._spac - self._y0 for y in range(int(self._b * 3 / self._spac))]
+        self._xv, self._yv = np.meshgrid(self._xl, self._yl)
+        self._zv = np.zeros_like(self._xv)
+
         self.eval_surf()
 
     def eval_surf(self):
         if self._surf_eval:
             return
 
-        u0, u1, u2, cth_2 = self._u0, self._u1, self._u2, np.cos(self._th / 2)
-        self._r = R.from_quat([u0, u1, u2, cth_2])
+        self._r = R.from_euler('ZXY', [self._ptch, self._yaw, self._roll], degrees=True)
+        self._R = self._r.as_matrix()
+        self._Ri = self._r.inv().as_matrix()
 
-        pts = []
-        for xi, yi in itertools.product(range(int(self._w / self._spac)), range(int(self._h / self._spac))):
-            xi *= self._spac
-            yi *= self._spac
-            pts.append([xi, yi, self.z(xi, yi)])
-        self._pts = np.asarray(pts).T
+        xv0, yv0 = self._xv, self._yv
+
+        z2 = 1 - xv0 ** 2 / self._a2 - yv0 ** 2 / self._b2
+        z = self._c * np.sqrt(z2)
+
+        rot1 = np.einsum('ji, mni -> jmn', self._R, np.dstack([xv0, yv0, -z]))
+
+        def _r(r):
+            rgx = np.logical_and(r[0] >= 0, r[0] <= self._w)
+            rgy = np.logical_and(r[1] >= 0, r[1] <= self._h)
+            # idx = np.where(np.logical_and(rgx, rgy))
+            r[0][~np.logical_and(rgx, rgy)] = np.nan
+            r[1][~np.logical_and(rgx, rgy)] = np.nan
+            r[2][~np.logical_and(rgx, rgy)] = np.nan
+
+        _r(rot1)
+
+        out = rot1
+        out[0] += self._x0
+        out[1] += self._y0
+
+        self._pts = np.array([out[0].ravel(), out[1].ravel(), out[2].ravel()])
         with self.calculating_semaphore:
             self.pts = self._pts.copy().astype(int)
-            self.xl, self.yl, self.zl = self.pts
+        self.xl, self.yl, self.zl = self.pts
 
         self._surf_eval = True
 

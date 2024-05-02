@@ -1,5 +1,3 @@
-from threading import Thread
-
 import numpy as np
 from mayavi import mlab
 from mayavi.modules.surface import Surface
@@ -28,17 +26,22 @@ if __name__ == "__main__":
     surface = Surface()
     source.add_module(surface)
 
-    u0, u1, u2, theta = 1, 0, 0, np.pi / 2
-    r = R.from_quat([u0, u1, u2, theta / 2])
+    pry = np.array([
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        [1, 1, 0],
+        [1, 0, 1],
+        [1, 1, 1]
+    ])
 
+    w, h = 512, 512
     e = EllipsoidFit(source.parametric_function, xyz_0=(x0, y0, z0), sample_spacing=50)
-    e.u0, e.u1, e.u2, e.theta = u1, -u2, -u0, theta
-    e.volume = np.empty(shape=(25, a * 4, b * 2))
-
+    e.pitch, e.roll, e.yaw = pry[0] * 90
+    e.volume = np.empty(shape=(25, w, h))
     points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=10)
-    o = mlab.quiver3d(u0, u1, u2, scale_factor=2 * b)
 
-    o.actor.actor.orientation = r.as_euler('XYZ', degrees=True)
+    o = mlab.quiver3d(0, 1, 0, scale_factor=2 * b)
 
     actor = surface.actor  # mayavi actor, actor.actor is tvtk actor
     actor.property.opacity = 0.2
@@ -52,57 +55,47 @@ if __name__ == "__main__":
     actor.actor.position = np.array([x0, y0, z0])
     actor.property.representation = ['wireframe', 'surface'][1]
 
+    t = mlab.text(.3, .05, "holi", width=.05)
 
-    @mlab.animate(delay=500)
+
+    @mlab.animate(delay=100)
     def update_visualisation(srf, pts, o):
-        theta = np.linspace(0, 2 * np.pi, 10)
+        theta = np.linspace(- np.pi, np.pi, 100)
         xr = np.linspace(-1000, 1000, 40)
-        i = j = 0
+        i = j = k = 0
         while True:
             i = (i + 1) % len(theta)
             j = (j + 1) % len(xr)
-            x0, y0, z0 = xr[j], xr[j], 0
-            r = R.from_quat([u0, u1, u2, np.cos(theta[i] / 2)])
+            if i == 0:
+                k = (k + 1) % len(pry)
+            x0, y0, z0 = 0, 0, 0
 
-            # order of angles follows [pitch, roll, yaw]
-            srf.actor.actor.orientation = r.as_euler('YZX', degrees=True)
-            o.actor.actor.orientation = r.as_euler('YZX', degrees=True)
-            srf.actor.actor.position = np.array([x0, y0, z0])
-            o.actor.actor.position = np.array([x0, y0, z0])
+            pitch, roll, yaw = pry[k] * np.rad2deg(theta[i])
+            r = R.from_euler('ZXY', [yaw, roll, pitch], degrees=True)
 
-            # --------------------------------------------------------------
-            #  DEBUG info
-            # --------------------------------------------------------------
-            print()
-            tq = np.array([*pts.actor.actor.orientation_wxyz[1:4], pts.actor.actor.orientation_wxyz[0]])
-            print(f"them bf {pts.actor.actor.orientation} {tq}")
+            # order of angles follows [yaw, pitch, roll]
+            for el in [srf, o]:
+                # el.actor.actor.orientation = r.as_euler('ZXY', degrees=True)
+                el.actor.actor.orientation = [yaw, roll, pitch]  # r.as_euler('ZXY', degrees=True)
+                el.actor.actor.position = np.array([x0, y0, z0])
 
-            mq = np.array([*r.as_quat(canonical=False)[0:3], np.rad2deg(r.as_quat(canonical=False)[3])])
-            tq = np.array([*pts.actor.actor.orientation_wxyz[1:4], pts.actor.actor.orientation_wxyz[0]])
-
-            print(f"mine af {r.as_euler('YZX', degrees=True)} {mq}")
-
-            r2 = R.from_euler('YZX', np.deg2rad(pts.actor.actor.orientation))
-            mq2 = np.array([*r2.as_quat(canonical=False)[0:3], np.rad2deg(r2.as_quat(canonical=False)[3])])
-            print(f"mine a2 {r2.as_euler('YZX', degrees=True)} {mq2}")
-
-            print(f"them af {pts.actor.actor.orientation} {tq}")
-            # dot product should yield 1 if q1==q2
-            print(f"logical check if q1==q2 {np.dot(r.as_quat(canonical=False), r2.as_quat(canonical=False))}")
+            t.text = f"{int(roll)}"
 
             # recompute points on surface given new coordinates
             e.x0, e.y0, e.z0 = x0, y0, z0
-            e.u0, e.u1, e.u2 = u1, -u2, -u0
-            e.theta = theta[i]
+            e.pitch, e.roll, e.yaw = pitch, roll, yaw
+
             e.eval_surf()
 
             pts.mlab_source.set(x=e.xl, y=e.yl, z=e.zl)
-
             yield
 
 
     update_visualisation(surface, points, o)
     axes = mlab.orientation_axes()
+    ax = mlab.axes(xlabel='X', ylabel='Y', zlabel='Z',
+                   extent=(0, w, 0, h, 0, 100), opacity=1.0,
+                   x_axis_visibility=True, y_axis_visibility=True, z_axis_visibility=True)
 
     mlab.view(azimuth=90, elevation=90, distance=10000, focalpoint=(-0., 1.05, 1.05))
     mlab.show()
