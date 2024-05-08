@@ -133,3 +133,5 @@ if __name__ == "__main__":
     update_visualisation(surface, points)
     mlab.orientation_axes()
     mlab.show()
+
+    e.stop = True

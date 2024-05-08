@@ -57,6 +57,7 @@ class EllipsoidFit:
         self._img_changes = 0
         self._dist_to_vol = np.inf
         self.calculating_semaphore = Semaphore()
+        self.stop = False
 
         self._prop_keys = {
             "x0": "self._x0",
@@ -203,6 +204,9 @@ class EllipsoidFit:
 
         return out
 
+    def _accept_sol(self, x, f, accept):
+        return self.stop
+
     def optimize_parameters(self):
         param_bounds = ((-100 * self._ppu, 100 * self._ppu),  # X range
                         (-100 * self._ppu, 100 * self._ppu),  # Y range
@@ -213,7 +217,10 @@ class EllipsoidFit:
                         (-10, 10), (-45, 45), (-45, 45))
         x0 = [250, 250, 100, 200, 500, 200, 0, 0, 0]
         # res = basinhopping(self._obj_fn_minimize, x0, minimizer_kwargs={'bounds': param_bounds, 'args': (yn, Np)})
-        res = basinhopping(self._obj_fn_minimize, x0, stepsize=10, T=10, minimizer_kwargs={'bounds': param_bounds})
+        res = basinhopping(self._obj_fn_minimize, x0,
+                           stepsize=10, T=10,
+                           minimizer_kwargs={'bounds': param_bounds},
+                           callback=self._accept_sol)
         print(res.x)
         # objf = self._obj_fn_minimize(res.x, yn)
         return res
