@@ -1,7 +1,8 @@
 from threading import Semaphore
 
 import numpy as np
-from scipy.optimize import basinhopping
+from lmfit import Minimizer
+from lmfit import Parameters
 from scipy.spatial.transform import Rotation as R
 
 
@@ -102,7 +103,7 @@ class EllipsoidFit:
             self._projected_img_2d = None
             self._img_2d_calculated = False
 
-        self._grid(self._spac)
+            self._grid(self._spac)
 
         self.eval_surf()
 
@@ -131,11 +132,6 @@ class EllipsoidFit:
         self._pts = np.array([np.concatenate((rot10[0], rot11[0])).ravel(),
                               np.concatenate((rot10[1], rot11[1])).ravel(),
                               np.concatenate((rot10[2], rot11[2])).ravel()])
-
-        _X = np.stack([np.ones_like(z) * self._w / 2, np.ones_like(z) * self._h / 2, np.ones_like(z) * self._nz / 2])
-        sdiff0 = np.sum(np.sqrt((rot10 - _X) ** 2), axis=0)
-        sdiff1 = np.sum(np.sqrt((rot11 - _X) ** 2), axis=0)
-        self._dist_to_vol = np.nanmin((np.nanmin(sdiff0), np.nanmin(sdiff1)))
 
         def _r(r):
             rgx = np.logical_and(r[0] >= 0, r[0] <= self._w)
@@ -194,35 +190,71 @@ class EllipsoidFit:
         assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
         return np.median(self.projected_img_2d), self._img_changes
 
-    def _obj_fn_minimize(self, xv):
-        if np.any(np.isnan(xv)):
-            return np.inf
+    def _eval_params(self, p: Parameters):
+        for name in p.keys():
+            # print(f"self.{name} = {p[name].value}")
+            exec(f"self.{name} = {p[name].value}")
 
-        self.x0, self.y0, self.z0, self.x_radius, self.y_radius, self.z_radius, self.roll, self.pitch, self.yaw = xv
-        s, chg = self.project_2d()
-        out = np.nan_to_num(1 / (0.1 * chg + s), posinf=1e5) + self._dist_to_vol
-        xv_str = np.array2string(xv, precision=0, suppress_small=True, floatmode='fixed')
-        print(f"testing f({xv_str})=1/(0.1*{chg}+{s})+{self._dist_to_vol:0.2f}={out:0.6E}")
+    def _obj_fn_minimize_0(self, p):
+        self._eval_params(p)
+
+        # ab_ratio = self._a / self._b
+        ab_rel = self._b > self._a
+        ac_ratio = self._a / self._c
+        # ac_rel = self._a > self._c
+        sr = 10 * np.abs(1 - ac_ratio)
+        sr += 10000 if not ab_rel else 0
+
+        self.eval_surf()
+        s0 = np.sqrt(
+            (self._x0 - self._w / 2) ** 2 +
+            (self._y0 - self._h / 2) ** 2 +
+            (self._z0 - self._c - self._nz / 2) ** 2)
+        zz = self._pts[2]
+        zhits = np.nansum(np.logical_and(zz >= 0, zz <= self._nz))
+
+        out = s0 + sr + np.nan_to_num(10 / zhits, posinf=1e5) if zhits > 0 else s0 + 1e5
+        xv = np.array([p[n].value for n in p.keys()])
+        xv_str = np.array2string(xv, precision=1, suppress_small=False, floatmode='fixed')
+        print(f"testing 0 f({xv_str})= {s0} + 10/{zhits} ={out:0.6E}  ac_ratio={ac_ratio}")
 
         return out
 
-    def _accept_sol(self, x, f, accept):
-        return self.stop
-
     def optimize_parameters(self):
-        param_bounds = ((-100 * self._ppu, 100 * self._ppu),  # X range
-                        (-100 * self._ppu, 100 * self._ppu),  # Y range
-                        (-10 * self._ppu, 10 * self._ppu),  # Z range
-                        (100 * self._ppu, 700 * self._ppu),  # left - right radius range
-                        (200 * self._ppu, 7000 * self._ppu),  # posterior - anterior radius range
-                        (100 * self._ppu, 700 * self._ppu),  # basal - apical radius range
-                        (-10, 10), (-45, 45), (-45, 45))
-        x0 = [250, 250, 100, 200, 500, 200, 0, 0, 0]
-        # res = basinhopping(self._obj_fn_minimize, x0, minimizer_kwargs={'bounds': param_bounds, 'args': (yn, Np)})
-        res = basinhopping(self._obj_fn_minimize, x0,
-                           stepsize=10, T=10,
-                           minimizer_kwargs={'bounds': param_bounds},
-                           callback=self._accept_sol)
-        print(res.x)
-        # objf = self._obj_fn_minimize(res.x, yn)
-        return res
+        params = Parameters()
+        params.add('x0', value=self._w / 2, vary=True)
+        params.add('y0', value=self._h / 2, vary=True)
+        params.add('z0', value=self._c + self._nz / 2, vary=True)
+        params.add('x_radius', value=self._a, vary=True)
+        params.add('y_radius', value=self._b, vary=True)
+        params.add('z_radius', value=self._c, vary=True)
+        params.add('roll', value=0, vary=True)
+        params.add('pitch', value=0, vary=False)
+        params.add('yaw', value=0, vary=True)
+
+        params['x0'].min = -100 * self._ppu
+        params['x0'].max = 100 * self._ppu
+        params['y0'].min = -100 * self._ppu
+        params['y0'].max = 100 * self._ppu
+        params['z0'].min = -100 * self._ppu
+        params['z0'].max = 100 * self._ppu
+
+        params['x_radius'].min = 0.1
+        params['x_radius'].max = 400 * self._ppu
+        params['y_radius'].min = 0.1
+        params['y_radius'].max = 1000 * self._ppu
+        params['z_radius'].min = 0.1
+        params['z_radius'].max = 400 * self._ppu
+        for r in ['roll', 'pitch', 'yaw']:
+            params[r].min = -10
+            params[r].max = 10
+
+        fitter = Minimizer(self._obj_fn_minimize_0, params)
+        result = fitter.minimize(method='bgfs', params=params)
+        # result = fitter.minimize(method='basinhopping', params=params)  # , niter=10 ** 4, niter_success=1000)
+
+        self._eval_params(result.params)
+        print(result)
+        print(result.params, result.residual)
+
+        return result

@@ -73,14 +73,14 @@ if __name__ == "__main__":
     surface = Surface()
     source.add_module(surface)
 
-    spac = 50
+    spac = 125
     e = EllipsoidFit(source.parametric_function, cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0), sample_spacing=spac)
     e.volume = data
     x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
 
     e.eval_surf()
     points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=10)
-    points_rect = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 0), scale_factor=100)
+    points_rect = mlab.points3d(e.xlo, e.ylo, e.zlo, [1] * len(e.xlo), color=(1, 0, 0), scale_factor=100)
 
     mlab.orientation_axes()
 
@@ -107,14 +107,13 @@ if __name__ == "__main__":
 
 
     @mlab.animate(delay=500)
-    def update_visualisation(srf, pts):
+    def update_visualisation():
         while True:
             x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
             # print(f'Updating Visualisation {np.round(e.state(), 1)} ({len(e.xl)} {len(e.yl)} {len(e.zl)})')
 
-            e.eval_surf()
-            pts.mlab_source.set(x=e.xl, y=e.yl, z=e.zl)
-            points_rect.mlab_source.set(x=e.xlo, y=e.ylo, z=e.zlo)
+            points.mlab_source.reset(x=e.xl, y=e.yl, z=e.zl)
+            points_rect.mlab_source.reset(x=e.xlo, y=e.ylo, z=e.zlo)
 
             source.parametric_function.x_radius = a
             source.parametric_function.y_radius = b
@@ -122,7 +121,7 @@ if __name__ == "__main__":
 
             img.mlab_source.scalars = e.projected_img_2d
 
-            for el in [srf, ]:
+            for el in [surface, ]:
                 el.actor.actor.orientation = [yaw, roll, pitch]  # r.as_euler('ZXY', degrees=True)
                 el.actor.actor.position = np.array([x0, y0, z0])
                 # actor.actor.scale = np.array([a, b, c])
@@ -130,7 +129,7 @@ if __name__ == "__main__":
             yield
 
 
-    update_visualisation(surface, points)
+    update_visualisation()
     mlab.orientation_axes()
     mlab.show()
 
