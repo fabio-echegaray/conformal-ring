@@ -79,8 +79,9 @@ class EllipsoidFit:
             exec(f"{self._prop_keys[name]} = {value}")
             if name[2:8] == "radius":
                 exec(f"{self._prop_keys[name]}2 = {value ** 2}")
-            self._surf_eval = False
-            self._img_2d_calculated = False
+            with self.calculating_semaphore:
+                self._surf_eval = False
+                self._img_2d_calculated = False
         else:
             super().__setattr__(name, value)
 
@@ -97,8 +98,9 @@ class EllipsoidFit:
         self._nz, self._h, self._w = vol.shape
         self._dtype = vol.dtype
 
-        self._projected_img_2d = None
-        self._img_2d_calculated = False
+        with self.calculating_semaphore:
+            self._projected_img_2d = None
+            self._img_2d_calculated = False
 
         self._grid(self._spac)
 
@@ -148,10 +150,10 @@ class EllipsoidFit:
 
         with self.calculating_semaphore:
             self.pts = self._pts.copy().astype(int)
-        self.xl, self.yl, self.zl = self.pts
-        self.xlo, self.ylo, self.zlo = self._pts_out
+            self.xl, self.yl, self.zl = self.pts
+            self.xlo, self.ylo, self.zlo = self._pts_out
 
-        self._surf_eval = True
+            self._surf_eval = True
 
     @property
     def projected_img_2d(self):
