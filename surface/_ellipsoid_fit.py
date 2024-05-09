@@ -90,6 +90,21 @@ class EllipsoidFit:
         return self._x0, self._y0, self._z0, self._a, self._b, self._c, self._roll, self._ptch, self._yaw
 
     @property
+    def sample_spacing(self):
+        return self._spac
+
+    @sample_spacing.setter
+    def sample_spacing(self, spacing: int):
+        self._spac = spacing
+        with self.calculating_semaphore:
+            self._projected_img_2d = None
+            self._img_2d_calculated = False
+
+            self._grid(self._spac)
+
+        self.eval_surf()
+
+    @property
     def volume(self):
         return self._vol
 
