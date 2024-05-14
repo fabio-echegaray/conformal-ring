@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as R
 class EllipsoidFit:
     _prop_keys: dict = {}
 
-    def __init__(self, vtk_ellipsoid, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1):
+    def __init__(self, vtk_ellipsoid, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1):
         self._ppu = pix_per_um
 
         self._spac = sample_spacing
@@ -53,7 +53,9 @@ class EllipsoidFit:
         self.zl = None
         self._pts = None
         self.pts = None
+        self._resampled_img_2d = None
         self._projected_img_2d = None
+        self._img_2d_thick = min(resampled_thickness, 5)
         self._img_2d_calculated = False
         self._img_changes = 0
         self._dist_to_vol = np.inf
@@ -97,6 +99,7 @@ class EllipsoidFit:
     def sample_spacing(self, spacing: int):
         self._spac = spacing
         with self.calculating_semaphore:
+            self._resampled_img_2d = None
             self._projected_img_2d = None
             self._img_2d_calculated = False
 
@@ -115,8 +118,9 @@ class EllipsoidFit:
         self._dtype = vol.dtype
 
         with self.calculating_semaphore:
-            self._projected_img_2d = None
             self._img_2d_calculated = False
+            self._resampled_img_2d = None
+            self._projected_img_2d = None
 
             self._grid(self._spac)
 
@@ -168,42 +172,64 @@ class EllipsoidFit:
 
     @property
     def projected_img_2d(self):
-        if self._img_2d_calculated:
-            return self._projected_img_2d
-        if self._projected_img_2d is None:
-            # self._projected_img_2d = np.zeros(shape=(self._w, self._h), dtype=self._dtype)
-            self._projected_img_2d = np.zeros(shape=(int(self._w / self._spac), int(self._h / self._spac)),
-                                              dtype=self._dtype)
-        else:
-            self._projected_img_2d[:, :] = 0
+        with self.calculating_semaphore:
+            if self._img_2d_calculated:
+                return self._projected_img_2d
 
-        xl, yl, zl = self._pts_out
-        zf = np.array(zl)
-        zix = np.logical_and(~np.isnan(zf), np.logical_and(0 <= zf, zf < self._nz))
-        zf = np.floor(zf[zix]).astype(int)
-        xf = np.array(xl).astype(int)[zix]
-        yf = np.array(yl).astype(int)[zix]
-        self._img_changes = 0
-        changes = len(zf)
-        if changes > 0:
-            for xi, yi, zi in zip(xf, yf, zf):
-                rx, ry = int(xi / self._spac), int(yi / self._spac)
-                # if 0 <= xi < self._w and 0 <= yi < self._h and 0 <= zi < self._nz:
+            zrng = np.arange(start=-self._img_2d_thick / 2, stop=self._img_2d_thick / 2, step=1, dtype=np.int8)
+            if self._projected_img_2d is None:
+                self._resampled_img_2d = np.zeros(
+                    shape=(int(self._img_2d_thick), int(self._w / self._spac), int(self._h / self._spac)),
+                    dtype=self._dtype)
+                self._projected_img_2d = np.zeros(shape=(int(self._w / self._spac), int(self._h / self._spac)),
+                                                  dtype=self._dtype)
+            else:
+                self._resampled_img_2d[:, :, :] = 0
+                self._projected_img_2d[:, :] = 0
+
+            xl, yl, zl = self._pts_out
+            zf = np.array(zl)
+            zix = np.logical_and(~np.isnan(zf), np.logical_and(0 <= zf, zf < self._nz))
+            zf = np.floor(zf[zix]).astype(int)
+            xf = np.array(xl)[zix].astype(int)
+            yf = np.array(yl)[zix].astype(int)
+
+            self._img_changes = 0
+            changes = len(zf)
+            if changes == 0:
+                return self._projected_img_2d
+
+            neo_rx = np.floor(np.repeat(xf[:, None], len(zrng), axis=1) / self._spac).astype(int)
+            neo_ry = np.floor(np.repeat(yf[:, None], len(zrng), axis=1) / self._spac).astype(int)
+            neo_xl = np.repeat(xf[:, None], len(zrng), axis=1)
+            neo_yl = np.repeat(yf[:, None], len(zrng), axis=1)
+            neo_zl = np.repeat(zf[:, None], len(zrng), axis=1) + zrng
+            neo_rz = np.zeros_like(neo_zl) + np.array(list(range(len(zrng))))
+            nrz, nrx, nry = self._resampled_img_2d.shape
+            for rx, ry, rz, xi, yi, zi in zip(neo_rx.ravel(), neo_ry.ravel(), neo_rz.ravel(),
+                                              neo_xl.ravel(), neo_yl.ravel(), neo_zl.ravel()):
                 try:
-                    self._projected_img_2d[rx, ry] = self._vol[zi, xi, yi]
+                    # if 0 <= xi < self._w and 0 <= yi < self._h and 0 <= zi < self._nz:
+                    if xi < self._w and yi < self._h and zi < self._nz and \
+                            rx < nrx and ry < nry and rz < nrz:
+                        self._resampled_img_2d[rz, rx, ry] = self._vol[zi, xi, yi]
                 except IndexError as e:
                     print(e)
                 self._img_changes += 1
 
-        # self._projected_img_2d = transform.resize(img_tmp, output_shape=self._projected_img_2d.shape)
-        self._img_2d_calculated = True
-        return self._projected_img_2d
+            # self._projected_img_2d = transform.resize(img_tmp, output_shape=self._projected_img_2d.shape)
+            self._projected_img_2d = np.median(self._resampled_img_2d, axis=0)
+            self._img_2d_calculated = True
+            return self._projected_img_2d
 
     def project_2d(self):
         self.eval_surf()
 
-        assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
-        return np.median(self.projected_img_2d), self._img_changes
+        # assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
+        with self.calculating_semaphore:
+            out0 = np.nansum(self._projected_img_2d), self._img_changes
+        out = np.nansum(self.projected_img_2d), self._img_changes
+        return out
 
     def _eval_params(self, p: Parameters):
         for name in p.keys():
@@ -235,7 +261,42 @@ class EllipsoidFit:
 
         return out
 
-    def optimize_parameters(self):
+    def _obj_fn_minimize_1(self, p):
+        self._eval_params(p)
+
+        # ab_ratio = self._a / self._b
+        # ab_rel = self._b > self._a
+
+        s, chg = self.project_2d()
+
+        xx, yy, zz = self._pts
+        xx -= self._x0 + self._w / 2
+        yy -= self._y0 + self._h / 2
+        zz -= self._z0 + self._nz / 2
+
+        sdiff = np.sqrt(xx ** 2 + yy ** 2 + zz ** 2)
+        dist_to_vol = np.nanmin(sdiff)
+
+        zhits = np.nansum(np.logical_and(zz >= 0, zz <= self._nz))
+        zin_dist = 100 * (self._w * self._h / self._spac ** 2 - zhits)
+        in_z = zin_dist
+
+        o0_den = 0.1 * chg + s
+        out = np.nan_to_num(1 / o0_den, posinf=1e5) + dist_to_vol + in_z if o0_den > 0 else 1e6
+        xv = np.array([p[n].value for n in p.keys()])
+        xv_str = np.array2string(xv, precision=1, suppress_small=True, floatmode='fixed')
+        print(f"testing 1 f({xv_str})=1/(0.1* {chg} + {s} )+ {dist_to_vol + in_z:0.2f} ={out:0.6E}")
+
+        return out
+
+    def _accept_sol(self, x, f, accept):
+        return self.stop
+
+    def optimize_parameters_0(self):
+        """
+        This optimization step searches for the best position to place the ellipsoid so it contains most of the voxels
+        :return: MinimizerResult
+        """
         params = Parameters()
         params.add('x0', value=self._w / 2, vary=True)
         params.add('y0', value=self._h / 2, vary=True)
@@ -265,11 +326,55 @@ class EllipsoidFit:
             params[r].max = 10
 
         fitter = Minimizer(self._obj_fn_minimize_0, params)
-        result = fitter.minimize(method='bgfs', params=params)
-        # result = fitter.minimize(method='basinhopping', params=params)  # , niter=10 ** 4, niter_success=1000)
+        self._result0 = fitter.minimize(method='bgfs', params=params)
 
-        self._eval_params(result.params)
-        print(result)
-        print(result.params, result.residual)
+        self._eval_params(self._result0.params)
+        print(self._result0)
+        print(self._result0.params, self._result0.residual)
 
-        return result
+        return self._result0
+
+    def optimize_parameters_1(self):
+        """
+        This optimization step searches for the best position to place the ellipsoid so it contains most of the voxels
+        :return: MinimizerResult
+        """
+        p0 = self._result0.params
+        params = Parameters()
+        params.add('x0', value=p0['x0'].value, vary=True)
+        params.add('y0', value=p0['y0'].value, vary=True)
+        params.add('z0', value=p0['z0'].value, vary=True)
+        params.add('x_radius', value=p0['x_radius'].value, vary=True)
+        params.add('y_radius', value=p0['y_radius'].value, vary=True)
+        params.add('z_radius', value=p0['z_radius'].value, vary=True)
+        params.add('roll', value=p0['roll'].value, vary=True)
+        params.add('pitch', value=p0['pitch'].value, vary=False)
+        params.add('yaw', value=p0['yaw'].value, vary=True)
+
+        params['x0'].min = p0['x0'].value - self._w / 8
+        params['x0'].max = p0['x0'].value + self._w / 8
+        params['y0'].min = p0['y0'].value - self._h / 8
+        params['y0'].max = p0['y0'].value + self._h / 8
+        params['z0'].min = p0['z0'].value - self._nz / 8
+        params['z0'].max = p0['z0'].value + self._nz / 8
+
+        params['x_radius'].min = p0['x_radius'].value - 0.1 * p0['x_radius'].value
+        params['x_radius'].max = p0['x_radius'].value + 0.1 * p0['x_radius'].value
+        params['y_radius'].min = p0['y_radius'].value - 0.1 * p0['y_radius'].value
+        params['y_radius'].max = p0['y_radius'].value + 0.1 * p0['y_radius'].value
+        params['z_radius'].min = p0['z_radius'].value - 0.1 * p0['z_radius'].value
+        params['z_radius'].max = p0['z_radius'].value + 0.1 * p0['z_radius'].value
+        for r in ['roll', 'pitch', 'yaw']:
+            val = p0[r].value if p0[r].value > 0 else 0.1
+            params[r].min = params[r].value - 0.5 * val
+            params[r].max = params[r].value + 0.5 * val
+
+        fitter = Minimizer(self._obj_fn_minimize_1, params)
+        # self._result1 = fitter.minimize(method='bgfs', params=params)
+        self._result1 = fitter.minimize(method='basinhopping', params=params)  # , niter=10 ** 4, niter_success=1000)
+
+        self._eval_params(self._result1.params)
+        print(self._result1)
+        print(self._result1.params, self._result1.residual)
+
+        return self._result1

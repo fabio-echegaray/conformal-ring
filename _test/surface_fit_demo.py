@@ -20,7 +20,7 @@ class ThreadedAction(Thread):
 
     def run(self):
         print("Fitting ellipsoid to data ...")
-        self._e.optimize_parameters()
+        self._e.optimize_parameters_1()
         print('done.')
 
 
@@ -74,11 +74,16 @@ if __name__ == "__main__":
     source.add_module(surface)
 
     spac = 125
-    e = EllipsoidFit(source.parametric_function, cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0), sample_spacing=spac)
+    e = EllipsoidFit(source.parametric_function, cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0),
+                     sample_spacing=spac, resampled_thickness=3)
     e.volume = data
     x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
 
+    e.optimize_parameters_0()
+    spac = 25
+    e.sample_spacing = spac
     e.eval_surf()
+
     points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=10)
     points_rect = mlab.points3d(e.xlo, e.ylo, e.zlo, [1] * len(e.xlo), color=(1, 0, 0), scale_factor=100)
 
