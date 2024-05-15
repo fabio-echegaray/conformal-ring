@@ -243,6 +243,26 @@ class EllipsoidFit:
         out = np.nansum(self.projected_img_2d), self._img_changes
         return out
 
+    def save_projection(self, name="projection.png"):
+        # obtain projection of volumetric data onto 3D surface
+        self.sample_spacing = 1
+
+        # write image to PNG
+        depth_array = numpy_support.numpy_to_vtk(self.projected_img_2d.ravel(), deep=True,
+                                                 array_type=vtk.VTK_UNSIGNED_SHORT)
+        depth_array.SetNumberOfComponents(1)
+
+        imagedata = vtkImageData()
+        imagedata.SetSpacing([1, 1, 1])
+        imagedata.SetOrigin([-1, -1, -1])
+        imagedata.SetDimensions(self._w, self._h, 1)
+        imagedata.GetPointData().SetScalars(depth_array)
+
+        writer = vtkPNGWriter()
+        writer.SetInputData(imagedata)
+        writer.SetFileName(name)
+        writer.Write()
+
     def _eval_params(self, p: Parameters):
         for name in p.keys():
             # print(f"self.{name} = {p[name].value}")
