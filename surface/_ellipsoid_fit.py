@@ -238,9 +238,7 @@ class EllipsoidFit:
         self.eval_surf()
 
         # assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
-        with self.calculating_semaphore:
-            out0 = np.nansum(self._projected_img_2d), self._img_changes
-        out = np.nansum(self.projected_img_2d), self._img_changes
+        out = np.nanmean(self.projected_img_2d), self._img_changes
         return out
 
     def save_projection(self, name="projection.png"):
@@ -314,15 +312,12 @@ class EllipsoidFit:
         in_z = zin_dist
 
         o0_den = 0.01 * chg + s
-        out = np.nan_to_num(100 / o0_den, posinf=1e5) + 0.1 * (dist_to_vol + in_z) if o0_den > 0 else 1e6
+        out = np.nan_to_num(100 / o0_den, posinf=1e5) + 0.0001 * (dist_to_vol + in_z) if o0_den > 0 else 1e6
         xv = np.array([p[n].value for n in p.keys()])
         xv_str = np.array2string(xv, precision=1, suppress_small=True, floatmode='fixed')
-        print(f"testing 1 f({xv_str})=100/(0.01* {chg} + {s} )+ {dist_to_vol + in_z:0.2f} ={out:0.6E}")
+        print(f"testing 1 f({xv_str})=100/(0.01* {chg} + {s} )+  0.0001* {dist_to_vol + in_z:0.2f} ={out:0.6E}")
 
         return out
-
-    def _accept_sol(self, x, f, accept):
-        return self.stop
 
     def optimize_parameters_0(self):
         """
