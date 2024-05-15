@@ -2,6 +2,8 @@ from pathlib import Path
 from threading import Thread
 
 import numpy as np
+from PyQt5 import QtCore
+from PyQt5.QtCore import QObject
 from fileops.export.config import create_cfg_file, read_config
 from mayavi import mlab
 from mayavi.modules.surface import Surface
@@ -13,15 +15,19 @@ from surface import EllipsoidFit
 np.set_printoptions(precision=2, linewidth=500)
 
 
-class ThreadedAction(Thread):
+class ThreadedAction(Thread, QObject):
+    finished = QtCore.pyqtSignal()
+
     def __init__(self, ellipsoid: EllipsoidFit, **kwargs):
         Thread.__init__(self, **kwargs)
+        QObject.__init__(self, **kwargs)
         self._e = ellipsoid
 
     def run(self):
         print("Fitting ellipsoid to data ...")
         self._e.optimize_parameters_1()
         print('done.')
+        self.finished.emit()
 
 
 if __name__ == "__main__":
@@ -85,7 +91,7 @@ if __name__ == "__main__":
     e.eval_surf()
 
     points = mlab.points3d(e.xl, e.yl, e.zl, [1] * len(e.xl), color=(1, 0, 1), scale_factor=10)
-    points_rect = mlab.points3d(e.xlo, e.ylo, e.zlo, [1] * len(e.xlo), color=(1, 0, 0), scale_factor=100)
+    points_rect = mlab.points3d(e.xlo, e.ylo, e.zlo, [1] * len(e.xlo), color=(1, 0, 0), opacity=0.2, scale_factor=100)
 
     mlab.orientation_axes()
 
@@ -108,15 +114,27 @@ if __name__ == "__main__":
     img = mlab.imshow(img_)
 
     te = ThreadedAction(e)
+
+
+    @QtCore.pyqtSlot()
+    def on_finish():
+        mlab.close(all=True)
+        print("all should be closed now.")
+        e.save_projection()
+
+
+    te.finished.connect(on_finish)
     te.start()
 
 
-    @mlab.animate(delay=500)
+    @mlab.animate(delay=1000, ui=False)
     def update_visualisation():
-        while True:
+        while not e.stop:
             x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
             # print(f'Updating Visualisation {np.round(e.state(), 1)} ({len(e.xl)} {len(e.yl)} {len(e.zl)})')
 
+            points.mlab_source.scalars = None
+            points_rect.mlab_source.scalars = None
             points.mlab_source.reset(x=e.xl, y=e.yl, z=e.zl)
             points_rect.mlab_source.reset(x=e.xlo, y=e.ylo, z=e.zlo)
 
@@ -136,6 +154,8 @@ if __name__ == "__main__":
 
     update_visualisation()
     mlab.orientation_axes()
-    mlab.show()
 
-    e.stop = True
+    try:
+        mlab.show()
+    except KeyboardInterrupt:
+        e.stop = True
