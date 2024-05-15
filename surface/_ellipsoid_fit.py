@@ -1,9 +1,14 @@
 from threading import Semaphore
 
 import numpy as np
+import vtk
 from lmfit import Minimizer
 from lmfit import Parameters
 from scipy.spatial.transform import Rotation as R
+from vtkmodules.util import numpy_support
+from vtkmodules.vtkCommonDataModel import vtkImageData
+from vtkmodules.vtkIOImage import vtkPNGWriter
+
 
 
 class EllipsoidFit:
@@ -59,6 +64,7 @@ class EllipsoidFit:
         self._img_2d_calculated = False
         self._img_changes = 0
         self._dist_to_vol = np.inf
+        self.local_search = None
         self.calculating_semaphore = Semaphore()
         self.stop = False
 
@@ -103,7 +109,7 @@ class EllipsoidFit:
             self._projected_img_2d = None
             self._img_2d_calculated = False
 
-            self._grid(self._spac)
+            self._grid()
 
         self.eval_surf()
 
@@ -122,13 +128,19 @@ class EllipsoidFit:
             self._resampled_img_2d = None
             self._projected_img_2d = None
 
-            self._grid(self._spac)
+            self._grid()
 
         self.eval_surf()
 
-    def _grid(self, spacing):
-        self._xl = [x * spacing - self._a - self._x0 for x in range(int(self._a * 3 / spacing))]
-        self._yl = [y * spacing - self._b - self._y0 for y in range(int(self._b * 3 / spacing))]
+    def _grid(self):
+        s = self._spac
+        if self.local_search is not None:
+            ls = self.local_search
+            self._xl = [x * s - (self._w + ls) / 2 for x in range(int((self._w + ls) / s))]
+            self._yl = [y * s - (self._h + ls) / 2 for y in range(int((self._h + ls) / s))]
+        else:
+            self._xl = [x * s - self._a - self._x0 for x in range(int(self._a * 3 / s))]
+            self._yl = [y * s - self._b - self._y0 for y in range(int(self._b * 3 / s))]
         self._xv, self._yv = np.meshgrid(self._xl, self._yl)
         self._zv = np.zeros_like(self._xv)
 
@@ -281,11 +293,11 @@ class EllipsoidFit:
         zin_dist = 100 * (self._w * self._h / self._spac ** 2 - zhits)
         in_z = zin_dist
 
-        o0_den = 0.1 * chg + s
-        out = np.nan_to_num(1 / o0_den, posinf=1e5) + dist_to_vol + in_z if o0_den > 0 else 1e6
+        o0_den = 0.01 * chg + s
+        out = np.nan_to_num(100 / o0_den, posinf=1e5) + 0.1 * (dist_to_vol + in_z) if o0_den > 0 else 1e6
         xv = np.array([p[n].value for n in p.keys()])
         xv_str = np.array2string(xv, precision=1, suppress_small=True, floatmode='fixed')
-        print(f"testing 1 f({xv_str})=1/(0.1* {chg} + {s} )+ {dist_to_vol + in_z:0.2f} ={out:0.6E}")
+        print(f"testing 1 f({xv_str})=100/(0.01* {chg} + {s} )+ {dist_to_vol + in_z:0.2f} ={out:0.6E}")
 
         return out
 
@@ -369,9 +381,39 @@ class EllipsoidFit:
             params[r].min = params[r].value - 0.5 * val
             params[r].max = params[r].value + 0.5 * val
 
+        with self.calculating_semaphore:
+            self.local_search = 200
+            self._grid()
+
         fitter = Minimizer(self._obj_fn_minimize_1, params)
         # self._result1 = fitter.minimize(method='bgfs', params=params)
         self._result1 = fitter.minimize(method='basinhopping', params=params)  # , niter=10 ** 4, niter_success=1000)
+
+        # repeat search one last time, only now at full resolution
+        print("performing last search (last one!)")
+        self.sample_spacing = 4  # this will acquire a calculating_semaphore and will recompute grid
+
+        p1 = self._result1.params
+        p1['x0'].min = p1['x0'].value - self._w / 8
+        p1['x0'].max = p1['x0'].value + self._w / 8
+        p1['y0'].min = p1['y0'].value - self._h / 8
+        p1['y0'].max = p1['y0'].value + self._h / 8
+        p1['z0'].min = p1['z0'].value - self._nz / 8
+        p1['z0'].max = p1['z0'].value + self._nz / 8
+
+        p1['x_radius'].min = p1['x_radius'].value - 0.1 * p1['x_radius'].value
+        p1['x_radius'].max = p1['x_radius'].value + 0.1 * p1['x_radius'].value
+        p1['y_radius'].min = p1['y_radius'].value - 0.1 * p1['y_radius'].value
+        p1['y_radius'].max = p1['y_radius'].value + 0.1 * p1['y_radius'].value
+        p1['z_radius'].min = p1['z_radius'].value - 0.1 * p1['z_radius'].value
+        p1['z_radius'].max = p1['z_radius'].value + 0.1 * p1['z_radius'].value
+        for r in ['roll', 'pitch', 'yaw']:
+            val = p0[r].value if p0[r].value > 0 else 0.1
+            p1[r].min = p1[r].value - 0.2 * val
+            p1[r].max = p1[r].value + 0.2 * val
+
+        fitter = Minimizer(self._obj_fn_minimize_1, p1)
+        self._result1 = fitter.minimize(method='bgfs', params=p1)
 
         self._eval_params(self._result1.params)
         print(self._result1)
