@@ -15,7 +15,7 @@ class BaseFit:
     """
     _prop_keys: dict = {}
 
-    def __init__(self, *args, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1):
+    def __init__(self, *args, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1, **kwargs):
         self._ppu = pix_per_um
 
         self._vol = None
@@ -105,8 +105,8 @@ class BaseFit:
             self._xl = [x * s - (self._w + ls) / 2 for x in range(int((self._w + ls) / s))]
             self._yl = [y * s - (self._h + ls) / 2 for y in range(int((self._h + ls) / s))]
         else:
-            self._xl = [x * s - self._a - self._x0 for x in range(int(self._a * 3 / s))]
-            self._yl = [y * s - self._b - self._y0 for y in range(int(self._b * 3 / s))]
+            self._xl = [x * s - self._w / 2 - self._x0 for x in range(int(self._w * 3 / s))]
+            self._yl = [y * s - self._h / 2 - self._y0 for y in range(int(self._h * 3 / s))]
         self._xv, self._yv = np.meshgrid(self._xl, self._yl)
         self._zv = np.zeros_like(self._xv)
 
@@ -130,17 +130,7 @@ class BaseFit:
         self.eval_surf()
 
     def eval_surf(self):
-        if self._surf_eval:
-            return
-
-        self._r = R.from_euler('ZXY', [self._ptch, self._yaw, self._roll], degrees=True)
-        self._R = self._r.as_matrix()
-        self._Ri = self._r.inv().as_matrix()
-
-        xv0, yv0 = self._xv, self._yv
-
-        z2 = 1 - xv0 ** 2 / self._a2 - yv0 ** 2 / self._b2
-        z = self._c * np.sqrt(z2)
+        pass
 
     def rotate_points(self, xv, yv, zv):
         """

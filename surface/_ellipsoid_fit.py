@@ -95,7 +95,7 @@ class EllipsoidFit:
             super().__setattr__(name, value)
 
     def state(self):
-        return self._x0, self._y0, self._z0, self._a, self._b, self._c, self._roll, self._ptch, self._yaw
+        return self._x0, self._y0, self._z0, self._roll, self._ptch, self._yaw, self._a, self._b, self._c
 
     @property
     def sample_spacing(self):

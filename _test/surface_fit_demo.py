@@ -83,7 +83,7 @@ if __name__ == "__main__":
     e = EllipsoidFit(source.parametric_function, cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0),
                      sample_spacing=spac, resampled_thickness=3)
     e.volume = data
-    x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
+    x0, y0, z0, roll, pitch, yaw, a, b, c = e.state()
 
     e.optimize_parameters_0()
     spac = 25
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     @mlab.animate(delay=1000, ui=False)
     def update_visualisation():
         while not e.stop:
-            x0, y0, z0, a, b, c, roll, pitch, yaw = e.state()
+            x0, y0, z0, roll, pitch, yaw, a, b, c = e.state()
             # print(f'Updating Visualisation {np.round(e.state(), 1)} ({len(e.xl)} {len(e.yl)} {len(e.zl)})')
 
             points.mlab_source.scalars = None
