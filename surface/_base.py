@@ -15,15 +15,16 @@ class BaseFit:
     """
     _prop_keys: dict = {}
 
-    def __init__(self, *args, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1, **kwargs):
+    def __init__(self, *args, pix_per_um=1, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1, **kwargs):
+
         self._ppu = pix_per_um
+        self._spac = sample_spacing
 
         self._vol = None
         self._w = 0
         self._h = 0
         self._nz = 0
         self._dtype = None
-        self._spac = sample_spacing
 
         self._x0 = xyz_0[0]
         self._y0 = xyz_0[1]
@@ -34,9 +35,12 @@ class BaseFit:
         self._xv = None
         self._yv = None
         self._zv = None
-        self.xl = None
-        self.yl = None
-        self.zl = None
+        self.xl = None  # all calculated x points as a list
+        self.yl = None  # all calculated y points as a list
+        self.zl = None  # all calculated z points as a list
+        self.xlo = None  # filtered points x for output
+        self.ylo = None  # filtered points y for output
+        self.zlo = None  # filtered points z for output
         self._pts = None
         self.pts = None
         self._pts_out = None
@@ -61,26 +65,35 @@ class BaseFit:
         self.calculating_semaphore = Semaphore()
         self.stop = False
 
-        self._prop_keys = {
+        self._prop_keys.update({
             "x0": "self._x0",
             "y0": "self._y0",
             "z0": "self._z0",
             "roll": "self._roll",
             "pitch": "self._ptch",
             "yaw": "self._yaw",
-        }
+        })
 
     def __setattr__(self, name, value):
         if name in self._prop_keys.keys():
             exec(f"{self._prop_keys[name]} = {value}")
-            with self.calculating_semaphore:
-                self._surf_eval = False
-                self._img_2d_calculated = False
+            self.ask_recalc()
         else:
             super().__setattr__(name, value)
 
     def state(self):
         return self._x0, self._y0, self._z0, self._roll, self._ptch, self._yaw
+
+    def ask_recalc(self):
+        with self.calculating_semaphore:
+            self._resampled_img_2d = None
+            self._projected_img_2d = None
+            self._img_2d_calculated = False
+            self._surf_eval = False
+
+            self._r = None
+            self._R = None
+            self._Ri = None
 
     @property
     def sample_spacing(self):
@@ -89,13 +102,8 @@ class BaseFit:
     @sample_spacing.setter
     def sample_spacing(self, spacing: int):
         self._spac = spacing
-        with self.calculating_semaphore:
-            self._resampled_img_2d = None
-            self._projected_img_2d = None
-            self._img_2d_calculated = False
-
-            self._grid()
-
+        self.ask_recalc()
+        self._grid()
         self.eval_surf()
 
     def _grid(self):
@@ -125,28 +133,33 @@ class BaseFit:
             self._resampled_img_2d = None
             self._projected_img_2d = None
 
-            self._grid()
-
+        self._grid()
         self.eval_surf()
 
     def eval_surf(self):
         pass
 
-    def rotate_points(self, xv, yv, zv):
+    def rigid_transform_points(self, xv, yv, zv):
         """
-        Rotate points and filter the subset that is within the constraints of the volume
+        Rotate and translate points. Then, filter the subset that is within the constraints of the volume.
         :param xv:
         :param yv:
         :param zv:
         :return: np.array of all transformed points and also an np.array of the points filtered within the boundaries
                  of the volume.
         """
+        if self._r is None:
+            with self.calculating_semaphore:
+                self._r = R.from_euler('ZXY', [self._ptch, self._yaw, self._roll], degrees=True)
+                self._R = self._r.as_matrix()
+                self._Ri = self._r.inv().as_matrix()
+
         xx0 = np.array([self._x0, self._y0, self._z0])[:, None, None]
         rot10 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv, yv, zv]))
         rot11 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv, yv, -zv]))
-        self._pts = np.array([np.concatenate((rot10[0], rot11[0])).ravel(),
-                              np.concatenate((rot10[1], rot11[1])).ravel(),
-                              np.concatenate((rot10[2], rot11[2])).ravel()])
+        _pts = np.array([np.concatenate((rot10[0], rot11[0])).ravel(),
+                         np.concatenate((rot10[1], rot11[1])).ravel(),
+                         np.concatenate((rot10[2], rot11[2])).ravel()])
 
         def _r(r):
             rgx = np.logical_and(r[0] >= 0, r[0] <= self._w)
@@ -156,8 +169,11 @@ class BaseFit:
             r[1][~np.logical_and(rgx, rgy)] = np.nan
             r[2][~np.logical_and(rgx, rgy)] = np.nan
 
-        self._pts_out = self._pts.copy()
-        _r(self._pts_out)
+        _pts_out = _pts.copy()
+        _r(_pts_out)
+
+        with self.calculating_semaphore:
+            self._pts, self._pts_out = _pts, _pts_out
 
         return self._pts, self._pts_out
 

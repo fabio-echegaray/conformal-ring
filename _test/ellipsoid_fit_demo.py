@@ -80,7 +80,7 @@ if __name__ == "__main__":
     source.add_module(surface)
 
     spac = 125
-    e = EllipsoidFit(source.parametric_function, cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0),
+    e = EllipsoidFit(source.parametric_function, pix_per_um=cfg.image_file.pix_per_um, xyz_0=(x0, y0, z0),
                      sample_spacing=spac, resampled_thickness=3)
     e.volume = data
     x0, y0, z0, roll, pitch, yaw, a, b, c = e.state()

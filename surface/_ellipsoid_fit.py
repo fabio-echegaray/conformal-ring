@@ -1,136 +1,45 @@
-from threading import Semaphore
-
 import numpy as np
-import vtk
 from lmfit import Minimizer
 from lmfit import Parameters
 from scipy.spatial.transform import Rotation as R
-from vtkmodules.util import numpy_support
-from vtkmodules.vtkCommonDataModel import vtkImageData
-from vtkmodules.vtkIOImage import vtkPNGWriter
+
+from surface._base import BaseFit
 
 
+class EllipsoidFit(BaseFit):
 
-class EllipsoidFit:
-    _prop_keys: dict = {}
-
-    def __init__(self, vtk_ellipsoid, pix_per_um, xyz_0=(0, 0, 0), sample_spacing=1, resampled_thickness=1):
-        self._ppu = pix_per_um
-
-        self._spac = sample_spacing
+    def __init__(self, vtk_ellipsoid, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self._vtk_ellipsoid = vtk_ellipsoid
         self._a = vtk_ellipsoid.x_radius
         self._b = vtk_ellipsoid.y_radius
         self._c = vtk_ellipsoid.z_radius
 
-        self._vol = None
-        self._w = 0
-        self._h = 0
-        self._nz = 0
-        self._dtype = None
-
         self._a2 = self._a ** 2
         self._b2 = self._b ** 2
         self._c2 = self._c ** 2
-        self._x0 = xyz_0[0]
-        self._y0 = xyz_0[1]
-        self._z0 = xyz_0[2]
-        self._X = None
-        self._xl = None
-        self._yl = None
-        self._xv = None
-        self._yv = None
-        self._zv = None
 
-        # euler angles
-        self._roll = 0
-        self._ptch = 0
-        self._yaw = 0
-        self._r: R = None
-        self._R: np.array = None
-        self._Ri: np.array = None
-
-        self._surf_eval = False
-
-        self.xl = None
-        self.yl = None
-        self.zl = None
-        self._pts = None
-        self.pts = None
-        self._resampled_img_2d = None
-        self._projected_img_2d = None
-        self._img_2d_thick = min(resampled_thickness, 5)
-        self._img_2d_calculated = False
-        self._img_changes = 0
-        self._dist_to_vol = np.inf
-        self.local_search = None
-        self.calculating_semaphore = Semaphore()
-        self.stop = False
-
-        self._prop_keys = {
-            "x0": "self._x0",
-            "y0": "self._y0",
-            "z0": "self._z0",
-            "roll": "self._roll",
-            "pitch": "self._ptch",
-            "yaw": "self._yaw",
+        self._prop_keys.update({
             "x_radius": "self._a",
             "y_radius": "self._b",
             "z_radius": "self._c",
             "x_radius2": "self._a2",
             "y_radius2": "self._b2",
             "z_radius2": "self._c2",
-        }
+        })
 
     def __setattr__(self, name, value):
         if name in self._prop_keys.keys():
             exec(f"{self._prop_keys[name]} = {value}")
             if name[2:8] == "radius":
                 exec(f"{self._prop_keys[name]}2 = {value ** 2}")
-            with self.calculating_semaphore:
-                self._surf_eval = False
-                self._img_2d_calculated = False
+            self.ask_recalc()
         else:
             super().__setattr__(name, value)
 
     def state(self):
         return self._x0, self._y0, self._z0, self._roll, self._ptch, self._yaw, self._a, self._b, self._c
-
-    @property
-    def sample_spacing(self):
-        return self._spac
-
-    @sample_spacing.setter
-    def sample_spacing(self, spacing: int):
-        self._spac = spacing
-        with self.calculating_semaphore:
-            self._resampled_img_2d = None
-            self._projected_img_2d = None
-            self._img_2d_calculated = False
-
-            self._grid()
-
-        self.eval_surf()
-
-    @property
-    def volume(self):
-        return self._vol
-
-    @volume.setter
-    def volume(self, vol: np.array):
-        self._vol = vol
-        self._nz, self._h, self._w = vol.shape
-        self._dtype = vol.dtype
-
-        with self.calculating_semaphore:
-            self._img_2d_calculated = False
-            self._resampled_img_2d = None
-            self._projected_img_2d = None
-
-            self._grid()
-
-        self.eval_surf()
 
     def _grid(self):
         s = self._spac
@@ -182,89 +91,12 @@ class EllipsoidFit:
 
             self._surf_eval = True
 
-    @property
-    def projected_img_2d(self):
-        with self.calculating_semaphore:
-            if self._img_2d_calculated:
-                return self._projected_img_2d
-
-            zrng = np.arange(start=-self._img_2d_thick / 2, stop=self._img_2d_thick / 2, step=1, dtype=np.int8)
-            if self._projected_img_2d is None:
-                self._resampled_img_2d = np.zeros(
-                    shape=(int(self._img_2d_thick), int(self._w / self._spac), int(self._h / self._spac)),
-                    dtype=self._dtype)
-                self._projected_img_2d = np.zeros(shape=(int(self._w / self._spac), int(self._h / self._spac)),
-                                                  dtype=self._dtype)
-            else:
-                self._resampled_img_2d[:, :, :] = 0
-                self._projected_img_2d[:, :] = 0
-
-            xl, yl, zl = self._pts_out
-            zf = np.array(zl)
-            zix = np.logical_and(~np.isnan(zf), np.logical_and(0 <= zf, zf < self._nz))
-            zf = np.floor(zf[zix]).astype(int)
-            xf = np.array(xl)[zix].astype(int)
-            yf = np.array(yl)[zix].astype(int)
-
-            self._img_changes = 0
-            changes = len(zf)
-            if changes == 0:
-                return self._projected_img_2d
-
-            neo_rx = np.floor(np.repeat(xf[:, None], len(zrng), axis=1) / self._spac).astype(int)
-            neo_ry = np.floor(np.repeat(yf[:, None], len(zrng), axis=1) / self._spac).astype(int)
-            neo_xl = np.repeat(xf[:, None], len(zrng), axis=1)
-            neo_yl = np.repeat(yf[:, None], len(zrng), axis=1)
-            neo_zl = np.repeat(zf[:, None], len(zrng), axis=1) + zrng
-            neo_rz = np.zeros_like(neo_zl) + np.array(list(range(len(zrng))))
-            nrz, nrx, nry = self._resampled_img_2d.shape
-            for rx, ry, rz, xi, yi, zi in zip(neo_rx.ravel(), neo_ry.ravel(), neo_rz.ravel(),
-                                              neo_xl.ravel(), neo_yl.ravel(), neo_zl.ravel()):
-                try:
-                    # if 0 <= xi < self._w and 0 <= yi < self._h and 0 <= zi < self._nz:
-                    if xi < self._w and yi < self._h and zi < self._nz and \
-                            rx < nrx and ry < nry and rz < nrz:
-                        self._resampled_img_2d[rz, rx, ry] = self._vol[zi, xi, yi]
-                except IndexError as e:
-                    print(e)
-                self._img_changes += 1
-
-            # self._projected_img_2d = transform.resize(img_tmp, output_shape=self._projected_img_2d.shape)
-            self._projected_img_2d = np.median(self._resampled_img_2d, axis=0)
-            self._img_2d_calculated = True
-            return self._projected_img_2d
-
     def project_2d(self):
         self.eval_surf()
 
         # assert len(self.xl) == len(self.yl) and len(self.xl) == len(self.zl), "something happened in project_2d"
         out = np.nanmean(self.projected_img_2d), self._img_changes
         return out
-
-    def save_projection(self, name="projection.png"):
-        # obtain projection of volumetric data onto 3D surface
-        self.sample_spacing = 1
-
-        # write image to PNG
-        depth_array = numpy_support.numpy_to_vtk(self.projected_img_2d.ravel(), deep=True,
-                                                 array_type=vtk.VTK_UNSIGNED_SHORT)
-        depth_array.SetNumberOfComponents(1)
-
-        imagedata = vtkImageData()
-        imagedata.SetSpacing([1, 1, 1])
-        imagedata.SetOrigin([-1, -1, -1])
-        imagedata.SetDimensions(self._w, self._h, 1)
-        imagedata.GetPointData().SetScalars(depth_array)
-
-        writer = vtkPNGWriter()
-        writer.SetInputData(imagedata)
-        writer.SetFileName(name)
-        writer.Write()
-
-    def _eval_params(self, p: Parameters):
-        for name in p.keys():
-            # print(f"self.{name} = {p[name].value}")
-            exec(f"self.{name} = {p[name].value}")
 
     def _obj_fn_minimize_0(self, p):
         self._eval_params(p)
