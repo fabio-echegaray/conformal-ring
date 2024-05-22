@@ -155,11 +155,8 @@ class BaseFit:
                 self._Ri = self._r.inv().as_matrix()
 
         xx0 = np.array([self._x0, self._y0, self._z0])[:, None, None]
-        rot10 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv, yv, zv]))
-        rot11 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv, yv, -zv]))
-        _pts = np.array([np.concatenate((rot10[0], rot11[0])).ravel(),
-                         np.concatenate((rot10[1], rot11[1])).ravel(),
-                         np.concatenate((rot10[2], rot11[2])).ravel()])
+        rot = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv, yv, zv]))
+        _pts = np.array([rot[0].ravel(), rot[1].ravel(), rot[2].ravel()])
 
         def _r(r):
             rgx = np.logical_and(r[0] >= 0, r[0] <= self._w)

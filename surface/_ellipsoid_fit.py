@@ -1,7 +1,6 @@
 import numpy as np
 from lmfit import Minimizer
 from lmfit import Parameters
-from scipy.spatial.transform import Rotation as R
 
 from surface._base import BaseFit
 
@@ -57,37 +56,17 @@ class EllipsoidFit(BaseFit):
         if self._surf_eval:
             return
 
-        self._r = R.from_euler('ZXY', [self._ptch, self._yaw, self._roll], degrees=True)
-        self._R = self._r.as_matrix()
-        self._Ri = self._r.inv().as_matrix()
+        xv, yv = self._xv, self._yv
 
-        xv0, yv0 = self._xv, self._yv
-
-        z2 = 1 - xv0 ** 2 / self._a2 - yv0 ** 2 / self._b2
+        z2 = 1 - xv ** 2 / self._a2 - yv ** 2 / self._b2
         z = self._c * np.sqrt(z2)
 
-        xx0 = np.array([self._x0, self._y0, self._z0])[:, None, None]
-        rot10 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv0, yv0, z]))
-        rot11 = xx0 + np.einsum('ji, mni -> jmn', self._R, np.dstack([xv0, yv0, -z]))
-        self._pts = np.array([np.concatenate((rot10[0], rot11[0])).ravel(),
-                              np.concatenate((rot10[1], rot11[1])).ravel(),
-                              np.concatenate((rot10[2], rot11[2])).ravel()])
-
-        def _r(r):
-            rgx = np.logical_and(r[0] >= 0, r[0] <= self._w)
-            rgy = np.logical_and(r[1] >= 0, r[1] <= self._h)
-            # idx = np.where(np.logical_and(rgx, rgy))
-            r[0][~np.logical_and(rgx, rgy)] = np.nan
-            r[1][~np.logical_and(rgx, rgy)] = np.nan
-            r[2][~np.logical_and(rgx, rgy)] = np.nan
-
-        self._pts_out = self._pts.copy()
-        _r(self._pts_out)
+        pts, pts_flt = self.rigid_transform_points(np.vstack([xv, xv]), np.vstack([yv, yv]), np.vstack([z, -z]))
 
         with self.calculating_semaphore:
-            self.pts = self._pts.copy().astype(int)
-            self.xl, self.yl, self.zl = self.pts
-            self.xlo, self.ylo, self.zlo = self._pts_out
+            self.pts = pts.astype(int)
+            self.xl, self.yl, self.zl = pts
+            self.xlo, self.ylo, self.zlo = pts_flt
 
             self._surf_eval = True
 
