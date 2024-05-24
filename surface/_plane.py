@@ -61,22 +61,23 @@ class PlaneFit(BaseFit):
         # percentile_result = rank.mean_percentile(img_8bit, footprint=footprint, p0=0.1, p1=0.9)
         # bilateral_result = rank.mean_bilateral(img_8bit, footprint=footprint, s0=500, s1=500)
         median_result = rank.median(img_8bit, footprint=footprint)
-        # normal_result = rank.mean(img_8bit, footprint=footprint)
-        out = np.sum(median_result), self._img_changes
+        # mean_result = rank.mean(img_8bit, footprint=footprint)
+        # out = np.sum(self.projected_img_2d), np.ptp(self.projected_img_2d), np.sum(mean_result), np.sum(median_result), self._img_changes
+        out = np.sum(self.projected_img_2d), np.ptp(self.projected_img_2d), 0, np.sum(median_result), self._img_changes
         return out
 
     def _obj_fn_minimize_0(self, p):
         self._eval_params(p)
 
-        s, chg = self.project_2d()
+        sum, ptp, mean, median, chg = self.project_2d()
         # sleep(0.1)
-        out = np.nan_to_num(100000 / (chg + 1000 * s), posinf=1e5)
+        out = np.nan_to_num(100000 / (chg + sum + 1000 * ptp + 10 * median), posinf=1e5)
         # plane should be in at least 70% of the volume
-        if chg < self._h * self._w * 0.7:
-            out *= 1e2
+        # if chg < self._h * self._w * 0.7:
+        #     out *= 1e2
         xv = np.array([p[n].value for n in p.keys()])
         xv_str = np.array2string(xv, precision=1, suppress_small=True, floatmode='fixed')
-        print(f"testing f({xv_str})=100000/({chg}+1000*{s})={out}")
+        print(f"testing f({xv_str})=100000/({chg}+{sum}+1000*{ptp}+10*{median})={out}")
 
         return out
 
@@ -88,12 +89,12 @@ class PlaneFit(BaseFit):
         self.sample_spacing = 10  # this will acquire a calculating_semaphore and will recompute grid
 
         params = Parameters()
-        params.add('x0', value=0, vary=True)
-        params.add('y0', value=0, vary=True)
-        params.add('z0', value=self._nz / 2, vary=True)
-        params.add('a', value=self._a, vary=True)
-        params.add('b', value=self._b, vary=True)
-        params.add('c', value=self._c, vary=True)
+        params.add('x0', value=0, vary=False)
+        params.add('y0', value=0, vary=False)
+        params.add('z0', value=0, vary=True)
+        params.add('a', value=self._a, vary=False)
+        params.add('b', value=self._b, vary=False)
+        params.add('c', value=self._c, vary=False)
         params.add('roll', value=0, vary=False)
         params.add('pitch', value=0, vary=False)
         params.add('yaw', value=0, vary=False)
@@ -102,28 +103,40 @@ class PlaneFit(BaseFit):
         params['x0'].max = self._w * self._ppu
         params['y0'].min = -self._h * self._ppu
         params['y0'].max = self._h * self._ppu
-        params['z0'].min = -self._nz * self._ppu
-        params['z0'].max = self._nz * self._ppu
+        params['z0'].min = -self._nz / 2 * self._ppu
+        params['z0'].max = self._nz / 2 * self._ppu
 
         params['a'].min = 0
-        params['a'].max = 1 * self._ppu
+        params['a'].max = 0.1
         params['b'].min = 0
-        params['b'].max = 1 * self._ppu
+        params['b'].max = 0.1
         params['c'].min = 0
-        params['c'].max = 1 * self._ppu
+        params['c'].max = 0.1
 
+        print("brute force search for z")
+        self._delay = 0.1
         fitter = Minimizer(self._obj_fn_minimize_0, params)
-        self._result0 = fitter.minimize(method='basinhopping', params=params, stepsize=0.01)
+        self._result0 = fitter.minimize(method='brute', params=params, Ns=self._nz)
+
+        # repeat search one last time, only now at full resolution
+        print("search with bassinhoping")
+        self._delay = None
+        p1 = self._result0.params
+        p1['a'].vary = True
+        p1['b'].vary = True
+        self._result0 = fitter.minimize(method='basinhopping', params=p1, stepsize=0.01)
+        # self._result0 = fitter.minimize(method='emcee', params=params, nwalkers=10000)
+        # self._result0 = fitter.minimize(method='dual_annealing', params=params)
 
         # repeat search one last time, only now at full resolution
         print("performing last search (last one!)")
         self.sample_spacing = 3  # this will acquire a calculating_semaphore and will recompute grid
 
         p1 = self._result0.params
-        p1['x0'].min = p1['x0'].value - self._w / 8
-        p1['x0'].max = p1['x0'].value + self._w / 8
-        p1['y0'].min = p1['y0'].value - self._h / 8
-        p1['y0'].max = p1['y0'].value + self._h / 8
+        # p1['x0'].min = p1['x0'].value - self._w / 8
+        # p1['x0'].max = p1['x0'].value + self._w / 8
+        # p1['y0'].min = p1['y0'].value - self._h / 8
+        # p1['y0'].max = p1['y0'].value + self._h / 8
         p1['z0'].min = p1['z0'].value - self._nz / 2
         p1['z0'].max = p1['z0'].value + self._nz / 2
 

@@ -1,4 +1,3 @@
-from asyncio import sleep
 from pathlib import Path
 from threading import Thread
 
@@ -51,7 +50,7 @@ if __name__ == "__main__":
 
     imgser = cfg.image_file.image_series(channel=1, zstack='all', frame=38, as_8bit=False)
 
-    mlab.figure(1, bgcolor=(0, 0, 0), size=(500, 500))
+    fig = mlab.figure(1, bgcolor=(0, 0, 0), size=(500, 500))
     mlab.clf()
 
     data = imgser.images[0].reshape((imgser.zstacks, imgser.width, imgser.height))
@@ -95,26 +94,42 @@ if __name__ == "__main__":
     actor.enable_texture = True
     actor.property.representation = ['wireframe', 'surface'][1]
 
-    # vol.actor.actor.scale = np.array([1, 1, -1])
-
     img_ = transform.resize(data[10], output_shape=[int(k / spac) for k in data[10].shape])
-    mlab.figure(2, bgcolor=(0, 0, 0), size=(500, 500))
+    fig2 = mlab.figure(2, bgcolor=(0, 0, 0), size=(500, 500))
     img = mlab.imshow(img_)
+    mlab.view(azimuth=0, elevation=0, distance=462, focalpoint=(33.5, 33.5, 0.))
 
 
-    @mlab.animate(delay=1000, ui=True)
+    def key_press(obj, event):
+        print(mlab.view())
+
+
+    fig2.scene.interactor.add_observer("KeyPressEvent", key_press)
+
+
+    @mlab.animate(delay=100, ui=True)
     def update_visualisation():
+        frame = 0
         while not e.stop:
-            x0, y0, z0, roll, pitch, yaw, a, b, c = e.state()
+            # x0, y0, z0, roll, pitch, yaw, a, b, c = e.state()
             print(f'Updating Visualisation {np.round(e.state(), 1)}')
 
             points.mlab_source.scalars = None
-            points.mlab_source.reset(x=e.xl, y=e.yl, z=10 * (imgser.zstacks - e.zl))
+            points.mlab_source.reset(x=e.xl, y=e.yl, z=10 * e.zl)
 
-            z = -1 / c * (a * (x - x0) + b * (y - y0)) + z0
-            plane.mlab_source.scalars = z
+            plane.mlab_source.set(x=e.xl, y=e.yl, z=10 * e.zl)
 
-            img.mlab_source.scalars = e.projected_img_2d
+            img.mlab_source.scalars = np.fliplr(e.projected_img_2d)
+
+            # save frames as images on disk
+            mlab.figure(fig)
+            fig.scene.background = (.0, .0, .0)
+            mlab.savefig(f"render/fig1_frame{frame:05d}.png")
+            mlab.figure(fig2)
+            fig2.scene.background = (.0, .0, .0)
+            mlab.view(azimuth=0, elevation=0, distance=462, focalpoint=(33.5, 33.5, 0.))
+            mlab.savefig(f"render/fig2_frame{frame:05d}.png")
+            frame += 1
 
             yield
 
@@ -125,9 +140,6 @@ if __name__ == "__main__":
         # mlab.close(all=True)
         print("all should be closed now.")
         e.save_projection()
-        mlab.figure(3, bgcolor=(0, 0, 0), size=(500, 500))
-        e.sample_spacing = 1
-        mlab.imshow(e.projected_img_2d)
 
 
     anim = update_visualisation()

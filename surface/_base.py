@@ -113,8 +113,8 @@ class BaseFit:
             self._xl = [x * s - (self._w + ls) / 2 for x in range(int((self._w + ls) / s))]
             self._yl = [y * s - (self._h + ls) / 2 for y in range(int((self._h + ls) / s))]
         else:
-            self._xl = [x * s - self._w / 2 - self._x0 for x in range(int(self._w * 3 / s))]
-            self._yl = [y * s - self._h / 2 - self._y0 for y in range(int(self._h * 3 / s))]
+            self._xl = [x * s - self._w / 2 - self._x0 for x in range(int(self._w / s) + 1)]
+            self._yl = [y * s - self._h / 2 - self._y0 for y in range(int(self._h / s) + 1)]
         self._xv, self._yv = np.meshgrid(self._xl, self._yl)
         self._zv = np.zeros_like(self._xv)
 
